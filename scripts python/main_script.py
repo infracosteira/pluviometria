@@ -30,37 +30,37 @@ print("\nFiltrando anos completos...")
 registros_chuvas['Anos'] = registros_chuvas['Anos'].astype(int)
 registros_chuvas['Meses'] = registros_chuvas['Meses'].astype(int)
 ano = dt.datetime.now().year
-Anos_completos = registros_chuvas
-Anos_completos = Anos_completos.loc[Anos_completos['Anos'] < ano]
+anos_completos = registros_chuvas
+anos_completos = anos_completos.loc[anos_completos['Anos'] < ano]
 
 print("\nVerificando o primeiro e o ultimo ano de registro de cada posto...")
 
 #verificar qual o primeiro ano de registro e o ultimo ano de registro de cada posto
-primeiro_e_ultimo_ano = Anos_completos.groupby(['Municipios', 'Postos'
+primeiro_e_ultimo_ano = anos_completos.groupby(['Municipios', 'Postos'
                                                 ])['Anos'].agg(['min', 'max'])
 primeiro_e_ultimo_ano.columns = ['Ano_inicial', 'Ano_final']
-Anos_completos = Anos_completos.merge(primeiro_e_ultimo_ano,
+anos_completos = anos_completos.merge(primeiro_e_ultimo_ano,
                                       on=['Municipios', 'Postos'])
 
 print("\nVerificando o primeiro mes de registro...")
 
 #encontrar qual foi o primeiro mes registrado para cada posto no ano inicial
-ano_inicial_df = Anos_completos[Anos_completos['Anos'] ==
-                                Anos_completos['Ano_inicial']]
+ano_inicial_df = anos_completos[anos_completos['Anos'] ==
+                                anos_completos['Ano_inicial']]
 primeiro_mes_ano_inicial = ano_inicial_df.groupby(
     ['Municipios', 'Postos'])['Meses'].min().reset_index()
 primeiro_mes_ano_inicial.rename(columns={'Meses': 'Primeiro_mes'},
                                 inplace=True)
-Anos_completos = Anos_completos.merge(primeiro_mes_ano_inicial,
+anos_completos = anos_completos.merge(primeiro_mes_ano_inicial,
                                       on=['Municipios', 'Postos'],
                                       how='left')
-ano_final_df = Anos_completos[Anos_completos['Anos'] ==
-                              Anos_completos['Ano_final']]
+ano_final_df = anos_completos[anos_completos['Anos'] ==
+                              anos_completos['Ano_final']]
 
 print("\nVerificando o ultimo mes de registro...")
 
-ano_final_df = Anos_completos[Anos_completos['Anos'] ==
-                              Anos_completos['Ano_final']]
+ano_final_df = anos_completos[anos_completos['Anos'] ==
+                              anos_completos['Ano_final']]
 ultimo_mes_ano_final = ano_final_df.groupby(['Municipios', 'Postos'
                                              ])['Meses'].max().reset_index()
 ultimo_mes_ano_final.rename(columns={'Meses': 'Ultimo_mes'}, inplace=True)
@@ -108,15 +108,15 @@ def criar_ano_falha(ano, posto, municipio, latitude, longitude):
     return pd.concat(falhas, ignore_index=True)
 
 
-anos_unicos = Anos_completos['Anos'].unique()
-postos_unicos = Anos_completos['Postos'].unique()
+anos_unicos = anos_completos['Anos'].unique()
+postos_unicos = anos_completos['Postos'].unique()
 dias_cols = [f'Dia{i}' for i in range(1, 32)]
 falhas = []
 falhas_anos = []
 
 for posto in postos_unicos:
 
-    df_posto = Anos_completos[Anos_completos['Postos'] == posto]
+    df_posto = anos_completos[anos_completos['Postos'] == posto]
     anos_registrados = df_posto['Anos'].unique()
     anos_faltantes = set(range(anos_registrados.min(),
                                2024)) - set(anos_registrados)
@@ -151,37 +151,37 @@ for posto in postos_unicos:
 
 if falhas:
     df_falhas = pd.concat(falhas, ignore_index=True)
-    Anos_completos = pd.concat([Anos_completos, df_falhas], ignore_index=True)
+    anos_completos = pd.concat([anos_completos, df_falhas], ignore_index=True)
 
 print("Meses faltantes preenchidos com falhas.")
 
 if falhas_anos:
     df_falhas_anos = pd.concat(falhas_anos, ignore_index=True)
-    Anos_completos = pd.concat([Anos_completos, df_falhas_anos],
+    anos_completos = pd.concat([anos_completos, df_falhas_anos],
                                ignore_index=True)
 
-Anos_completos.sort_values(by=['Postos', 'Anos', 'Meses'], inplace=True)
-Anos_completos.reset_index(drop=True, inplace=True)
+anos_completos.sort_values(by=['Postos', 'Anos', 'Meses'], inplace=True)
+anos_completos.reset_index(drop=True, inplace=True)
 
 print(
     "\nRepreenchendo os novos registros com os meses e anos de primeiro registro"
 )
 
-primeiro_e_ultimo_ano = Anos_completos.groupby(['Municipios', 'Postos'
+primeiro_e_ultimo_ano = anos_completos.groupby(['Municipios', 'Postos'
                                                 ])['Anos'].agg(['min', 'max'])
 primeiro_e_ultimo_ano.columns = ['Ano_inicial', 'Ano_final']
-Anos_completos = Anos_completos.merge(primeiro_e_ultimo_ano,
+anos_completos = anos_completos.merge(primeiro_e_ultimo_ano,
                                       on=['Municipios', 'Postos'])
-Anos_completos.drop(columns=['Ano_inicial_x', 'Ano_final_x'], inplace=True)
+anos_completos.drop(columns=['Ano_inicial_x', 'Ano_final_x'], inplace=True)
 
-Anos_completos = Anos_completos.merge(primeiro_mes_ano_inicial,
+anos_completos = anos_completos.merge(primeiro_mes_ano_inicial,
                                       on=['Municipios', 'Postos'],
                                       how='left')
-Anos_completos = Anos_completos.merge(ultimo_mes_ano_final,
+anos_completos = anos_completos.merge(ultimo_mes_ano_final,
                                       on=['Municipios', 'Postos'],
                                       how='left')
-Anos_completos.drop(columns=['Primeiro_mes_x'], inplace=True)
-Anos_completos.rename(columns={
+anos_completos.drop(columns=['Primeiro_mes_x'], inplace=True)
+anos_completos.rename(columns={
     'Ano_inicial_y': 'Ano_inicial',
     'Ano_final_y': 'Ano_final',
     'Primeiro_mes_y': 'Primeiro_mes'
@@ -190,7 +190,7 @@ Anos_completos.rename(columns={
 
 print("\nVerificando quantos meses de falha existem parada cada posto")
 
-df_sem_extras = Anos_completos.drop(
+df_sem_extras = anos_completos.drop(
     columns=['Primeiro_mes', 'Ultimo_mes', 'Ano_inicial', 'Ano_final'])
 
 # Substituir os valores 888.0 por NaN e depois remover essas colunas
@@ -223,11 +223,11 @@ def verificar_meses_falha(df):
     return meses_falha_por_posto
 
 
-meses_falha_por_posto = verificar_meses_falha(Anos_completos)
+meses_falha_por_posto = verificar_meses_falha(anos_completos)
 meses_falha_por_posto
-Anos_completos = Anos_completos.merge(
+anos_completos = anos_completos.merge(
     meses_falha_por_posto.rename('Meses_de_Falha'), on='Postos', how='left')
-Anos_completos = Anos_completos.drop(columns=['Mes_falha'])
+anos_completos = anos_completos.drop(columns=['Mes_falha'])
 
 print(
     "\nCalculando intervalo de dias,meses e anos totais de falhas por posto..."
@@ -259,31 +259,31 @@ def contar_dias_falha(row):
     return sum(row[dia] == 999.0 for dia in dias_cols)
 
 
-Anos_completos['Intervalo_dias'] = Anos_completos.apply(
+anos_completos['Intervalo_dias'] = anos_completos.apply(
     calcular_intervalo_dias, axis=1)
-Anos_completos['Dias_de_Falha'] = Anos_completos.apply(contar_dias_falha,
+anos_completos['Dias_de_Falha'] = anos_completos.apply(contar_dias_falha,
                                                        axis=1)
-total_falhas_por_posto = Anos_completos.groupby(
+total_falhas_por_posto = anos_completos.groupby(
     'Postos')['Dias_de_Falha'].sum().reset_index()
 total_falhas_por_posto.rename(columns={'Dias_de_Falha': 'Total_Falhas'},
                               inplace=True)
-Anos_completos = Anos_completos.merge(total_falhas_por_posto,
+anos_completos = anos_completos.merge(total_falhas_por_posto,
                                       on='Postos',
                                       how='left')
-Anos_completos['Intervalo_anos'] = (
-    1 + Anos_completos['Ano_final']) - Anos_completos['Ano_inicial']
-Anos_completos['Intervalo_meses'] = Anos_completos['Intervalo_anos'] * 12
+anos_completos['Intervalo_anos'] = (
+    1 + anos_completos['Ano_final']) - anos_completos['Ano_inicial']
+anos_completos['Intervalo_meses'] = anos_completos['Intervalo_anos'] * 12
 
-Anos_completos.drop(columns=['Dias_de_Falha'], inplace=True)
+anos_completos.drop(columns=['Dias_de_Falha'], inplace=True)
 
-Anos_completos['dias_medidos'] = Anos_completos[
-    'Intervalo_dias'] - Anos_completos['Total_Falhas']
+anos_completos['dias_medidos'] = anos_completos[
+    'Intervalo_dias'] - anos_completos['Total_Falhas']
 
 print("\nCalculando a porcentagem de dias de falhas por posto...")
 
-Anos_completos['Porcentagem_dias_Falhas'] = (
-    Anos_completos['Total_Falhas'] / Anos_completos['Intervalo_dias']) * 100
-Anos_completos['Porcentagem_dias_Falhas'] = Anos_completos[
+anos_completos['Porcentagem_dias_Falhas'] = (
+    anos_completos['Total_Falhas'] / anos_completos['Intervalo_dias']) * 100
+anos_completos['Porcentagem_dias_Falhas'] = anos_completos[
     'Porcentagem_dias_Falhas'].round(2)
 
 print("\nVerificando anos de falha por posto...")
@@ -308,24 +308,24 @@ def contar_anos_falha(df):
     return anos_falha_por_posto
 
 
-anos_falha_por_posto = contar_anos_falha(Anos_completos)
-Anos_completos = Anos_completos.merge(anos_falha_por_posto,
+anos_falha_por_posto = contar_anos_falha(anos_completos)
+anos_completos = anos_completos.merge(anos_falha_por_posto,
                                       on='Postos',
                                       how='left')
-Anos_completos.drop(columns=['Ano_com_falha'], inplace=True)
+anos_completos.drop(columns=['Ano_com_falha'], inplace=True)
 
 print("\nCalculando anos completos medidos por posto...")
 
 # Agrupar por Município, Posto, Latitude e Longitude para garantir que os dados são do mesmo posto no mesmo município
-Anos_completos['Anos_completos_medidos'] = Anos_completos.groupby([
+anos_completos['anos_completos_medidos'] = anos_completos.groupby([
     'Municipios', 'Postos', 'Latitude', 'Longitude'
-])['Intervalo_anos'].transform('first') - Anos_completos.groupby([
+])['Intervalo_anos'].transform('first') - anos_completos.groupby([
     'Municipios', 'Postos', 'Latitude', 'Longitude'
 ])['Anos_de_Falha'].transform('first')
 
-Anos_completos['Porcentagem_anos_Falhas'] = (
-    Anos_completos['Anos_de_Falha'] / Anos_completos['Intervalo_anos']) * 100
-Anos_completos['Porcentagem_anos_Falhas'] = Anos_completos[
+anos_completos['Porcentagem_anos_Falhas'] = (
+    anos_completos['Anos_de_Falha'] / anos_completos['Intervalo_anos']) * 100
+anos_completos['Porcentagem_anos_Falhas'] = anos_completos[
     'Porcentagem_anos_Falhas'].round(2)
 
 print("\nCalculando a média mensal de chuvas por posto...")
@@ -342,7 +342,7 @@ def dados_validos(df):
     
     return df_validos
 
-df_dados_validos = dados_validos(Anos_completos)
+df_dados_validos = dados_validos(anos_completos)
 
 # Calcular a média mensal de chuvas por posto
 postos_unicos = df_dados_validos['Postos'].unique()
@@ -414,19 +414,19 @@ for posto in postos_unicos:
     })
 
 df_medias_mensais = pd.DataFrame(medias_mensais)
-Anos_completos = Anos_completos.merge(df_medias_mensais, left_on='Postos', right_on='Posto', how='left')
-Anos_completos.drop(columns=['Posto'], inplace=True)
+anos_completos = anos_completos.merge(df_medias_mensais, left_on='Postos', right_on='Posto', how='left')
+anos_completos.drop(columns=['Posto'], inplace=True)
 medias_cols = ['Media_Jan', 'Media_Fev', 'Media_Mar', 'Media_Apr', 'Media_May', 'Media_Jun', 'Media_Jul', 'Media_Aug', 'Media_Sep', 'Media_Oct', 'Media_Nov', 'Media_Dec']
-Anos_completos[medias_cols] = Anos_completos[medias_cols].fillna(999)
+anos_completos[medias_cols] = anos_completos[medias_cols].fillna(999)
 
 print("\nCalculando a média anual de chuvas por posto...")
 
-postos_unicos = Anos_completos['Postos'].unique()
+postos_unicos = anos_completos['Postos'].unique()
 
-Anos_completos['Media_Anual'] = 0.0
+anos_completos['Media_Anual'] = 0.0
 
 for posto in postos_unicos:
-    df_posto = Anos_completos[Anos_completos['Postos'] == posto]
+    df_posto = anos_completos[anos_completos['Postos'] == posto]
     intervalo_anos = df_posto['Intervalo_anos'].iloc[0]
 
     # Check if all monthly averages are 999
@@ -436,49 +436,49 @@ for posto in postos_unicos:
         soma_total_chuvas = df_posto[df_posto['Total'] != 999].groupby('Anos')['Total'].sum().sum()
         media_anual = soma_total_chuvas / intervalo_anos
 
-    Anos_completos.loc[Anos_completos['Postos'] == posto, 'Media_Anual'] = media_anual
+    anos_completos.loc[anos_completos['Postos'] == posto, 'Media_Anual'] = media_anual
 
-Anos_completos['Total_meses_intervalo'] = Anos_completos['Intervalo_anos'] * 12
+anos_completos['Total_meses_intervalo'] = anos_completos['Intervalo_anos'] * 12
 
-if 'Intervalo_meses' in Anos_completos.columns:
-    Anos_completos.drop(columns=['Intervalo_meses'], inplace=True)
+if 'Intervalo_meses' in anos_completos.columns:
+    anos_completos.drop(columns=['Intervalo_meses'], inplace=True)
 
-Anos_completos['Numero_meses_completos'] = Anos_completos['Total_meses_intervalo'] - Anos_completos['Meses_de_Falha']
+anos_completos['Numero_meses_completos'] = anos_completos['Total_meses_intervalo'] - anos_completos['Meses_de_Falha']
 
 def calcular_percentual_meses_falha(df):
     df['Percentual_meses_falha'] = (df['Meses_de_Falha'] / df['Total_meses_intervalo']) * 100
     df['Percentual_meses_falha'] = df['Percentual_meses_falha'].round(2)
     return df
 
-Anos_completos = calcular_percentual_meses_falha(Anos_completos)
+anos_completos = calcular_percentual_meses_falha(anos_completos)
 
 
-Anos_completos['Media_Anual'] = Anos_completos['Media_Anual'].round(1)
-Anos_completos['Media_Jan'] = Anos_completos['Media_Jan'].round(1)
-Anos_completos['Media_Fev'] = Anos_completos['Media_Fev'].round(1)
-Anos_completos['Media_Mar'] = Anos_completos['Media_Mar'].round(1)
-Anos_completos['Media_Apr'] = Anos_completos['Media_Apr'].round(1)
-Anos_completos['Media_May'] = Anos_completos['Media_May'].round(1)
-Anos_completos['Media_Jun'] = Anos_completos['Media_Jun'].round(1)
-Anos_completos['Media_Jul'] = Anos_completos['Media_Jul'].round(1)
-Anos_completos['Media_Aug'] = Anos_completos['Media_Aug'].round(1)
-Anos_completos['Media_Sep'] = Anos_completos['Media_Sep'].round(1)
-Anos_completos['Media_Oct'] = Anos_completos['Media_Oct'].round(1)
-Anos_completos['Media_Nov'] = Anos_completos['Media_Nov'].round(1)
-Anos_completos['Media_Dec'] = Anos_completos['Media_Dec'].round(1)
+anos_completos['Media_Anual'] = anos_completos['Media_Anual'].round(1)
+anos_completos['Media_Jan'] = anos_completos['Media_Jan'].round(1)
+anos_completos['Media_Fev'] = anos_completos['Media_Fev'].round(1)
+anos_completos['Media_Mar'] = anos_completos['Media_Mar'].round(1)
+anos_completos['Media_Apr'] = anos_completos['Media_Apr'].round(1)
+anos_completos['Media_May'] = anos_completos['Media_May'].round(1)
+anos_completos['Media_Jun'] = anos_completos['Media_Jun'].round(1)
+anos_completos['Media_Jul'] = anos_completos['Media_Jul'].round(1)
+anos_completos['Media_Aug'] = anos_completos['Media_Aug'].round(1)
+anos_completos['Media_Sep'] = anos_completos['Media_Sep'].round(1)
+anos_completos['Media_Oct'] = anos_completos['Media_Oct'].round(1)
+anos_completos['Media_Nov'] = anos_completos['Media_Nov'].round(1)
+anos_completos['Media_Dec'] = anos_completos['Media_Dec'].round(1)
 
 # Selecionar as colunas necessárias e renomeá-las conforme o formato desejado
 colunas_resumo = [
     'Postos', 'Municipios', 'Latitude', 'Longitude', 'Ano_inicial', 'Ano_final',
     'Primeiro_mes', 'Ultimo_mes', 'Intervalo_dias', 'dias_medidos', 'Total_Falhas',
     'Porcentagem_dias_Falhas', 'Total_meses_intervalo', 'Numero_meses_completos',
-    'Meses_de_Falha', 'Percentual_meses_falha', 'Intervalo_anos', 'Anos_completos_medidos',
+    'Meses_de_Falha', 'Percentual_meses_falha', 'Intervalo_anos', 'anos_completos_medidos',
     'Anos_de_Falha', 'Porcentagem_anos_Falhas', 'Media_Anual', 'Media_Jan', 'Media_Fev',
     'Media_Mar', 'Media_Apr', 'Media_May', 'Media_Jun', 'Media_Jul', 'Media_Aug',
     'Media_Sep', 'Media_Oct', 'Media_Nov', 'Media_Dec'
 ]
 
-df_resumo = Anos_completos[colunas_resumo].drop_duplicates(subset=['Postos'])
+df_resumo = anos_completos[colunas_resumo].drop_duplicates(subset=['Postos'])
 #df_resumo.insert(0, 'Chave_ID', df_resumo.index + 1)
 
 # Renomear as colunas conforme o formato desejado
@@ -500,7 +500,7 @@ df_resumo.rename(columns={
     'Meses_de_Falha': 'Numero_meses_falha',
     'Percentual_meses_falha': 'Percentual_meses_falha',
     'Intervalo_anos': 'Total_anos_intervalo',
-    'Anos_completos_medidos': 'Numero_anos_completos',
+    'anos_completos_medidos': 'Numero_anos_completos',
     'Anos_de_Falha': 'Numero_anos_falha',
     'Porcentagem_anos_Falhas': 'Percentual_anos_falha',
     'Media_Anual': 'Precipitacao_media_anual',
