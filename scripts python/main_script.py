@@ -453,20 +453,6 @@ def calcular_percentual_meses_falha(df):
 anos_completos = calcular_percentual_meses_falha(anos_completos)
 
 
-anos_completos['Media_Anual'] = anos_completos['Media_Anual'].round(1)
-anos_completos['Media_Jan'] = anos_completos['Media_Jan'].round(1)
-anos_completos['Media_Fev'] = anos_completos['Media_Fev'].round(1)
-anos_completos['Media_Mar'] = anos_completos['Media_Mar'].round(1)
-anos_completos['Media_Apr'] = anos_completos['Media_Apr'].round(1)
-anos_completos['Media_May'] = anos_completos['Media_May'].round(1)
-anos_completos['Media_Jun'] = anos_completos['Media_Jun'].round(1)
-anos_completos['Media_Jul'] = anos_completos['Media_Jul'].round(1)
-anos_completos['Media_Aug'] = anos_completos['Media_Aug'].round(1)
-anos_completos['Media_Sep'] = anos_completos['Media_Sep'].round(1)
-anos_completos['Media_Oct'] = anos_completos['Media_Oct'].round(1)
-anos_completos['Media_Nov'] = anos_completos['Media_Nov'].round(1)
-anos_completos['Media_Dec'] = anos_completos['Media_Dec'].round(1)
-
 # Selecionar as colunas necessárias e renomeá-las conforme o formato desejado
 colunas_resumo = [
     'Postos', 'Municipios', 'Latitude', 'Longitude', 'Ano_inicial', 'Ano_final',
@@ -517,6 +503,14 @@ df_resumo.rename(columns={
     'Media_Nov': 'Mes_Nov',
     'Media_Dec': 'Mes_Dec'
 }, inplace=True)
+
+# Arredondar todas as médias e percentuais para 2 casas decimais
+colunas_arredondar = [
+    'Precipitacao_media_anual', 'Mes_Jan', 'Mes_Fev', 'Mes_Mar', 'Mes_Apr', 'Mes_May',
+    'Mes_Jun', 'Mes_Jul', 'Mes_Aug', 'Mes_Sep', 'Mes_Oct', 'Mes_Nov', 'Mes_Dec',
+    'Percentual_dias_falhos', 'Percentual_meses_falha', 'Percentual_anos_falha'
+]
+df_resumo[colunas_arredondar] = df_resumo[colunas_arredondar].round(2)
 
 # Salvar o dataframe em um arquivo CSV
 df_resumo.to_csv('./data/resumo_postos_individual.csv', index=False, decimal=',')
