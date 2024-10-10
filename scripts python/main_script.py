@@ -529,8 +529,14 @@ df_resumo = df_resumo.map(lambda x: remover_acentos(x)
 # Converter o dataframe para uma lista de dicionários
 dados_formatados_resumo = df_resumo.to_dict(orient='records')
 
+# Adicionar a coluna 'id' ao dataframe
+df_resumo.insert(0, 'id', range(1, len(df_resumo) + 1))
+
+# Converter o dataframe para uma lista de dicionários
+dados_formatados_resumo = df_resumo.to_dict(orient='records')
+
 # Salvar a lista de dicionários em um arquivo JSON
-with open('dados_formatados_resumo.json', 'w') as f:
+with open('../data/dados_formatados_resumo.json', 'w') as f:
     json.dump(dados_formatados_resumo, f, ensure_ascii=False, indent=4)
 
 print("Arquivo JSON gerado com sucesso.")
