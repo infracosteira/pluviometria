@@ -465,7 +465,7 @@ colunas_resumo = [
 ]
 
 df_resumo = anos_completos[colunas_resumo].drop_duplicates(subset=['Postos'])
-#df_resumo.insert(0, 'Chave_ID', df_resumo.index + 1)
+df_resumo.insert(0, 'Chave_ID', df_resumo.index + 1)
 
 # Renomear as colunas conforme o formato desejado
 df_resumo.rename(columns={
