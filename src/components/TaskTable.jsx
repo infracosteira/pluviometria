@@ -327,23 +327,27 @@ const TaskTable = () => {
     fetchDataFromGitHub();
   }, []);
 
+  const [pagination, setPagination] = useState({
+    pageIndex: 0,
+    pageSize: 15
+  });
+  
   const table = useReactTable({
     data,
     columns,
     state: {
       columnFilters,
-      pagination: { pageIndex: 0, pageSize },
+      pagination
     },
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     columnResizeMode: "onChange",
   });
-
-  useEffect(() => {
-    table.setPageSize(pageSize);
-  }, [pageSize, table]);
+  
+  
 
   return (
     <Box>
@@ -406,22 +410,34 @@ const TaskTable = () => {
               {table.getPageCount()}
             </Text>
             <ButtonGroup size="sm" isAttached variant="outline">
-              <Button
-                color="black"
-                borderColor="black"
-                onClick={() => table.previousPage()}
-                isDisabled={!table.getCanPreviousPage()}
-              >
-                {"<"}
-              </Button>
-              <Button
-                color="black"
-                borderColor="black"
-                onClick={() => table.nextPage()}
-                isDisabled={!table.getCanNextPage()}
-              >
-                {">"}
-              </Button>
+            <Button
+  color="black"
+  borderColor="black"
+  onClick={() => {
+    setPagination((prev) => ({
+      ...prev,
+      pageIndex: Math.max(prev.pageIndex - 1, 0),
+    }));
+  }}
+  isDisabled={pagination.pageIndex === 0}
+>
+  {"<"}
+</Button>
+
+<Button
+  color="black"
+  borderColor="black"
+  onClick={() => {
+    setPagination((prev) => ({
+      ...prev,
+      pageIndex: Math.min(prev.pageIndex + 1, table.getPageCount() - 1),
+    }));
+  }}
+  isDisabled={pagination.pageIndex >= table.getPageCount() - 1}
+>
+  {">"}
+</Button>
+
             </ButtonGroup>
           </Box>
           <Box
@@ -440,7 +456,7 @@ const TaskTable = () => {
               width='70px'
               value={pageSize}
               onChange={(e) => {
-                const value = e.target.value ? Number(e.target.value) : 15;
+                const value = e.target.value ? Number(e.target.value) : 10;
                 setPageSize(value);
                 table.setPageSize(value);
               }}
