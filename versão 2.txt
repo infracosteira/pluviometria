@@ -1,0 +1,5 @@
+- Versão usando número de paginas igual a 10;
+- A troca de página funciona;
+- filtro de município não funciona;
+- usa dados do arquivo data.js
+-
