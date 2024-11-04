@@ -229,21 +229,15 @@ anos_completos = anos_completos.merge(
     meses_falha_por_posto.rename('Meses_de_Falha'), on='Postos', how='left')
 anos_completos = anos_completos.drop(columns=['Mes_falha'])
 
-print(
-    "\nCalculando intervalo de dias,meses e anos totais de falhas por posto..."
-)
+print("\nCalculando intervalo de dias,meses e anos totais de falhas por posto...")
 
 from datetime import datetime
-
 
 def calcular_intervalo_dias(row):
     data_inicial = datetime(row['Ano_inicial'], 1, 1)
     data_final = datetime(row['Ano_final'], 12, 31)
-
-    # Calculate the number of days in the interval, considering leap years
     intervalo = (data_final - data_inicial).days + 1
 
-    # Adjust for leap years
     for year in range(row['Ano_inicial'], row['Ano_final'] + 1):
         if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0):
             if year == row['Ano_inicial'] and data_inicial.month > 2:
@@ -428,8 +422,7 @@ anos_completos['Media_Anual'] = 0.0
 for posto in postos_unicos:
     df_posto = anos_completos[anos_completos['Postos'] == posto]
     intervalo_anos = df_posto['Intervalo_anos'].iloc[0]
-
-    # Check if all monthly averages are 999
+    
     if (df_posto[['Media_Jan', 'Media_Fev', 'Media_Mar', 'Media_Apr', 'Media_May', 'Media_Jun', 'Media_Jul', 'Media_Aug', 'Media_Sep', 'Media_Oct', 'Media_Nov', 'Media_Dec']] == 999).all(axis=None):
         media_anual = 999
     else:
