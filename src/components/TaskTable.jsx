@@ -464,6 +464,21 @@ const TaskTable = () => {
               max={100}
             />
           </Box>
+<Box mt={4}>
+  <Button
+    colorScheme="green"
+    onClick={() => {
+      const fileUrl = "https://github.com/infracosteira/pluviometria/raw/main/data/todos_os_postos.rar";
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = "todos_os_postos.rar";
+      link.click();
+    }}
+  >
+    Baixar todos os postos
+  </Button>
+    </Box>
+
         </Box>    
       </Box>
     </Box>
