@@ -5,3 +5,7 @@ Package References:
 - [React DatePicker](https://www.npmjs.com/package/react-datepicker?activeTab=readme)
 
 # pluviometria
+
+Before run:
+
+1 - npm install
