@@ -75,6 +75,7 @@
     },
     {
         "Chave_ID": "529",
+        "link_csv": "https://github.com/infracosteira/pluviometria/raw/main/data/postos_solo/ABILIO%20MARTINS.csv",
         "Nome_Posto": "ABILIO MARTINS",
         "Nome_Municipio": "Ipu",
         "Coordenada_Y": "-4.45",
