@@ -38,7 +38,7 @@
     },
     {
         "Chave_ID": "13",
-         "link_csv": "https://github.com/infracosteira/pluviometria/raw/main/data/postos_solo/ABAIARA.csv",
+        "link_csv": "https://github.com/infracosteira/pluviometria/raw/main/data/postos_solo/ABAIARA.csv",
         "Nome_Posto": "ABAIARA",
         "Nome_Municipio": "Abaiara",
         "Coordenada_Y": "-7.3615277777778",
