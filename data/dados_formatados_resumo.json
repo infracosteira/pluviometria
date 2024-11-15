@@ -186,7 +186,7 @@
     },
     {
         "Chave_ID": "1849",
-        "link_csv": "https://github.com/infracosteira/pluviometria/raw/main/data/postos_solo/AC.%20ARARAS.csv",
+        "link_csv": "https://raw.githubusercontent.com/infracosteira/pluviometria/main/data/postos_solo/AC.%20ARARAS.csv",
         "Nome_Posto": "AC. ARARAS",
         "Nome_Municipio": "Varjota",
         "Coordenada_Y": "-4.1996111111111",
