@@ -27,7 +27,6 @@ async function downloadFile(file) {
     }
 
     const blob = await response.blob();
-
     const link = document.createElement('a');
     link.href = window.URL.createObjectURL(blob);
     link.download = "file.csv";
