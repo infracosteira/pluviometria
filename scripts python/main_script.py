@@ -204,7 +204,7 @@ os.makedirs(output_dir, exist_ok=True)
 
 for posto in postos_unicos:
     registros_posto = df_sem_extras[df_sem_extras['Postos'] == posto]
-    nome_arquivo = os.path.join(output_dir, f"{posto}.csv")
+    nome_arquivo = os.path.join("../data/postos_solo", f"{posto.replace(' ', '_')}.csv")
     registros_posto.to_csv(nome_arquivo, index=False, decimal=',')
 
 print("\nArquivos CSV gerados para cada posto na pasta 'postos_solo'.")
