@@ -17,9 +17,13 @@ async function downloadFile(file) {
 
     const response = await fetch(file, {
       method: 'GET',
+      'mode':'no-cors',
+
       headers: {
-        Accept: 'text/csv',
-      },
+        'Accept': "*/*",
+        'Content-Type': "*/*",
+        
+      },
     });
 
     if (!response.ok) {
