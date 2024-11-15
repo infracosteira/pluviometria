@@ -12,7 +12,30 @@ import {
 import EditableCell from "./EditableCell";
 import Filters from "./Filters";
 import SortIcon from "./icons/SortIcon";
+async function downloadFile(file) {
+  try {
 
+    const response = await fetch(file, {
+      method: 'GET',
+      headers: {
+        Accept: 'text/csv',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ${response.status}: ${response.statusText}`);
+    }
+
+    const blob = await response.blob();
+
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.download = "file.csv";
+    link.click();
+  } catch (error) {
+    console.error('Error fetching or processing CSV:', error);
+  }
+};
 const columns = [
   {
     //coluna "id"
@@ -31,282 +54,319 @@ const columns = [
     cell: (props) => <p>{props.getValue()}</p>,
     enableColumnFilter: true,
     filterFn: "includesString",
-  
-  },
-  {
-    //coluna "Nome_Municipio"
-    accessorKey: "Nome_Municipio",
-    header: "Nome Municipio",
-    size: 180,
-    cell: EditableCell,
-  },
-  {
-    //Coordenada_X
-    accessorKey: "Coordenada_X",
-    header: "Coordenada X (m)",
-    size: 180,
-    cell: (props) => <p>{props.getValue()}</p>,
-  },
-  {
-     //Coordenada_Y
-    accessorKey: "Coordenada_Y",
-    header: "Coordenada Y (m)",
-    size: 180,
-    cell: (props) => <p>{props.getValue()}</p>,
-  },
-  {
-    //Ano_Inicio
-    accessorKey: "Ano_Inicio",
-    header: "Ano de Inicio",
-    size: 160,
-    cell: EditableCell,
-  },
-  {
-     //Ano_Fim
-    accessorKey: "Ano_Fim",
-    header: "Ano de Fim",
-    size: 160,
-    cell: EditableCell,
-  },
-  {
-     //Mes_Inicio
-    accessorKey: "Mes_Inicio",
-    header: "Mês de Inicio",
-    size: 140,
-    cell: EditableCell,
-  },
-  {
-    //Mes_Fim
-    accessorKey: "Mes_Fim",
-    header: "Mês de Fim",
-    size: 130,
-    cell: EditableCell,
-  },
-  //Dados diarios meteriolologicos
-   {
-    //Total_dias_intervalo
-    accessorKey: "Total_dias_intervalo",
-    header: "Total de dias do intervalo",
-    size: 225,
-    cell: EditableCell,
-  },
-  {
-    //Dias_dados_medidos
-    accessorKey: "Dias_dados_medidos",
-    header: "Número de dias com dados medidos",
-    size: 225,
-    cell: EditableCell,
-  },
-  {
-    //Dias_falhos
-    accessorKey: "Dias_falhos",
-    header: "Número de dias com falhas",
-    size: 225,
-    cell: EditableCell,
-  },
-  {
-    //Percentual_dias_falhos
-    accessorKey: "Percentual_dias_falhos",
-    header: "Percentual de dias com falhas (%)",
-    size: 225,
-    cell: EditableCell,
-  },
-  //Dados mensais meteriolologicos
-  {
-    //Total de meses do intervalo
-    accessorKey: "Total_meses_intervalo",
-    header: "Total de meses do intervalo",
-    size: 225,
-    cell: EditableCell,
-  },
-  {
-    ///Nº de meses completos
-    accessorKey: "Numero_meses_completos",
-    header: "Nº de meses completos",
-    size: 225,
-    cell: EditableCell,
-  },
-  {
-    //Nº de meses com falhas
-    accessorKey: "Numero_meses_falha",
-    header: "Nº de meses com falhas",
-    size: 225,
-    cell: EditableCell,
-  },
-  {
-    //Percentual de meses com falhas (%)
-    accessorKey: "Percentual_meses_falha",
-    header: "Percentual de meses com falhas (%)",
-    size: 225,
-    cell: EditableCell,
-  },
-//Dados Anuais meteriolologicos
-{
-  //Total de anos do intervalo
-  accessorKey: "Total_anos_intervalo",
-  header: "Total de anos do intervalo",
-  size: 225,
-  cell: EditableCell,
-},
-{
-  ///Nº de anos completos
-  accessorKey: "Numero_anos_completos",
-  header: "Nº de anos completos",
-  size: 225,
-  cell: EditableCell,
-},
-{
-  //Nº de anos com falhas
-  accessorKey: "Numero_anos_falha",
-  header: "Nº de anos com falhas",
-  size: 225,
-  cell: EditableCell,
-},
-{
-  //Percentual de anos com falhas (%)
-  accessorKey: "Percentual_anos_falha",
-  header: "Percentual de anos com falhas (%)",
-  size: 225,
-  cell: EditableCell,
-},
-//precipitação media anual
-{
-  //Precipitação média anual (mm)
-  accessorKey: "Precipitacao_media_anual",
-  header: "Precipitação média anual (mm)",
-  size: 225,
-  cell: EditableCell,
-},
+    },
 
-{
-  //coluna "Precipitação em Janeiro"
-  accessorKey: "Mes_Jan",
-  header: "Jan (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+    {
+    accessorKey: "download",
+    header: "➥",
+    size: 90, 
+    cell: (props) => {
+      return (
+      <button
+      // size="xs" 
+      // colorScheme="green"
+      // variant="solid"
+      // style={{
+      // width: "auto",     
+      // minWidth: "60px",  
+      // height: "20px",    
+      // padding: "0 4px",  
+      // fontSize: "0.7rem", 
+      // }}
+      // href={props.row.original.link_csv}
+      // download
+      // target="_blank"
+      // rel="noopener noreferrer"
+      onClick={() => {
+      //  const downloadLink = document.createElement("a");
+       downloadFile(props.row.original.link_csv);
+      //  downloadLink.href = "#";
+      //  downloadLink.download = `${props.row.original.link_csv}.csv`;
+      //  downloadLink.click();
+      }}
+      >
+      Baixar
+      </button>
+      );
+    },
+    },
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Fev",
-  header: "Feb (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Mar",
-  header: "Mar (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+//     {
+//     //coluna "Nome_Municipio"
+//     accessorKey: "Nome_Municipio",
+//     header: "Nome Municipio",
+//     size: 180,
+//     cell: EditableCell,
+//   },
+//   {
+//     //Coordenada_X
+//     accessorKey: "Coordenada_X",
+//     header: "Coordenada X (m)",
+//     size: 180,
+//     cell: (props) => <p>{props.getValue()}</p>,
+//   },
+//   {
+//      //Coordenada_Y
+//     accessorKey: "Coordenada_Y",
+//     header: "Coordenada Y (m)",
+//     size: 180,
+//     cell: (props) => <p>{props.getValue()}</p>,
+//   },
+//   {
+//     //Ano_Inicio
+//     accessorKey: "Ano_Inicio",
+//     header: "Ano de Inicio",
+//     size: 160,
+//     cell: EditableCell,
+//   },
+//   {
+//      //Ano_Fim
+//     accessorKey: "Ano_Fim",
+//     header: "Ano de Fim",
+//     size: 160,
+//     cell: EditableCell,
+//   },
+//   {
+//      //Mes_Inicio
+//     accessorKey: "Mes_Inicio",
+//     header: "Mês de Inicio",
+//     size: 140,
+//     cell: EditableCell,
+//   },
+//   {
+//     //Mes_Fim
+//     accessorKey: "Mes_Fim",
+//     header: "Mês de Fim",
+//     size: 130,
+//     cell: EditableCell,
+//   },
+//   //Dados diarios meteriolologicos
+//    {
+//     //Total_dias_intervalo
+//     accessorKey: "Total_dias_intervalo",
+//     header: "Total de dias do intervalo",
+//     size: 225,
+//     cell: EditableCell,
+//   },
+//   {
+//     //Dias_dados_medidos
+//     accessorKey: "Dias_dados_medidos",
+//     header: "Número de dias com dados medidos",
+//     size: 225,
+//     cell: EditableCell,
+//   },
+//   {
+//     //Dias_falhos
+//     accessorKey: "Dias_falhos",
+//     header: "Número de dias com falhas",
+//     size: 225,
+//     cell: EditableCell,
+//   },
+//   {
+//     //Percentual_dias_falhos
+//     accessorKey: "Percentual_dias_falhos",
+//     header: "Percentual de dias com falhas (%)",
+//     size: 225,
+//     cell: EditableCell,
+//   },
+//   //Dados mensais meteriolologicos
+//   {
+//     //Total de meses do intervalo
+//     accessorKey: "Total_meses_intervalo",
+//     header: "Total de meses do intervalo",
+//     size: 225,
+//     cell: EditableCell,
+//   },
+//   {
+//     ///Nº de meses completos
+//     accessorKey: "Numero_meses_completos",
+//     header: "Nº de meses completos",
+//     size: 225,
+//     cell: EditableCell,
+//   },
+//   {
+//     //Nº de meses com falhas
+//     accessorKey: "Numero_meses_falha",
+//     header: "Nº de meses com falhas",
+//     size: 225,
+//     cell: EditableCell,
+//   },
+//   {
+//     //Percentual de meses com falhas (%)
+//     accessorKey: "Percentual_meses_falha",
+//     header: "Percentual de meses com falhas (%)",
+//     size: 225,
+//     cell: EditableCell,
+//   },
+// //Dados Anuais meteriolologicos
+// {
+//   //Total de anos do intervalo
+//   accessorKey: "Total_anos_intervalo",
+//   header: "Total de anos do intervalo",
+//   size: 225,
+//   cell: EditableCell,
+// },
+// {
+//   ///Nº de anos completos
+//   accessorKey: "Numero_anos_completos",
+//   header: "Nº de anos completos",
+//   size: 225,
+//   cell: EditableCell,
+// },
+// {
+//   //Nº de anos com falhas
+//   accessorKey: "Numero_anos_falha",
+//   header: "Nº de anos com falhas",
+//   size: 225,
+//   cell: EditableCell,
+// },
+// {
+//   //Percentual de anos com falhas (%)
+//   accessorKey: "Percentual_anos_falha",
+//   header: "Percentual de anos com falhas (%)",
+//   size: 225,
+//   cell: EditableCell,
+// },
+// //precipitação media anual
+// {
+//   //Precipitação média anual (mm)
+//   accessorKey: "Precipitacao_media_anual",
+//   header: "Precipitação média anual (mm)",
+//   size: 225,
+//   cell: EditableCell,
+// },
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Apr",
-  header: "Apr (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+// {
+//   //coluna "Precipitação em Janeiro"
+//   accessorKey: "Mes_Jan",
+//   header: "Jan (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_May",
-  header: "May (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_Fev",
+//   header: "Feb (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Jun",
-  header: "jun (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_Mar",
+//   header: "Mar (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Jul",
-  header: "Jul (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_Apr",
+//   header: "Apr (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Aug",
-  header: "Aug (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_May",
+//   header: "May (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Sep",
-  header: "Sep (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_Jun",
+//   header: "jun (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Oct",
-  header: "Oct (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_Jul",
+//   header: "Jul (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Nov",
-  header: "Nov (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_Aug",
+//   header: "Aug (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
 
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Dec",
-  header: "Dec (mm)",
-  size: 200,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_Sep",
+//   header: "Sep (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
 
-},
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_Oct",
+//   header: "Oct (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
+
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_Nov",
+//   header: "Nov (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
+
+// },
+// {
+//   //coluna "Precipitação em Fervereiro"
+//   accessorKey: "Mes_Dec",
+//   header: "Dec (mm)",
+//   size: 200,
+//   cell: (props) => <p>{props.getValue()}</p>,
+//   enableColumnFilter: true,
+//   filterFn: "includesString",
+
+// },
 
 ];
 
 const TaskTable = () => {
-  const [data, setData] = useState([]); // Estado para armazenar os dados carregados
+  const [data, setData] = useState([]);
   const [columnFilters, setColumnFilters] = useState([]);
   const [pageSize, setPageSize] = useState(15);
 
   // Função para buscar os dados do GitHub
+  
   async function fetchDataFromGitHub() {
     try {
       const response = await fetch('https://raw.githubusercontent.com/infracosteira/pluviometria/refs/heads/main/data/dados_formatados_resumo.json');

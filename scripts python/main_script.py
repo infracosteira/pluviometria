@@ -508,6 +508,9 @@ df_resumo[colunas_arredondar] = df_resumo[colunas_arredondar].round(2)
 # Salvar o dataframe em um arquivo CSV
 df_resumo.to_csv('./data/resumo_postos_individual.csv', index=False, decimal=',')
 
+import unicodedata
+import json
+
 # Converter todos os valores numéricos para strings
 df_resumo = df_resumo.map(
     lambda x: str(x) if isinstance(x, (int, float)) else x)
@@ -522,14 +525,18 @@ df_resumo = df_resumo.map(lambda x: remover_acentos(x)
 # Converter o dataframe para uma lista de dicionários
 dados_formatados_resumo = df_resumo.to_dict(orient='records')
 
-# Adicionar a coluna 'id' ao dataframe
-df_resumo.insert(0, 'id', range(1, len(df_resumo) + 1))
+# Ler o arquivo links.csv
+links_df = pd.read_csv('../data/links.csv', header=None, usecols=[1], names=['link_csv'])
 
-# Converter o dataframe para uma lista de dicionários
-dados_formatados_resumo = df_resumo.to_dict(orient='records')
+# Adicionar a coluna link_csv ao dataframe df_resumo
+df_resumo['link_csv'] = links_df['link_csv'].values
+
+colunas = list(df_resumo.columns)  # Obtém a lista de colunas
+colunas.insert(1, colunas.pop(colunas.index('link_csv')))  # Move 'link_csv' para a segunda posição
+df_resumo = df_resumo[colunas]  # Reorganiza o DataFrame com a nova ordem de colunas
 
 # Salvar a lista de dicionários em um arquivo JSON
-with open('../data/dados_formatados_resumo.json', 'w') as f:
+with open('../data/dados_formatados_resumo.json', 'w', encoding='utf-8') as f:
     json.dump(dados_formatados_resumo, f, ensure_ascii=False, indent=4)
 
 print("Arquivo JSON gerado com sucesso.")
