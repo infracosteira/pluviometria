@@ -95,14 +95,14 @@ const columns = [
     //Coordenada_X
     accessorKey: "Coordenada_X",
     header: "Coord_X",
-    size: 120,
+    size: 130,
     cell: (props) => <p>{props.getValue()}</p>,
   },
   {
      //Coordenada_Y
     accessorKey: "Coordenada_Y",
     header: "Coord_Y",
-    size: 120,
+    size: 130,
     cell: (props) => <p>{props.getValue()}</p>,
   },
   {
@@ -509,7 +509,7 @@ const TaskTable = () => {
               width='70px'
               value={pageSize}
               onChange={(e) => {
-                const value = e.target.value ? Number(e.target.value) : 10;
+                const value = e.target.value ? Number(e.target.value) : null;
                 setPageSize(value);
                 table.setPageSize(value);
               }}
