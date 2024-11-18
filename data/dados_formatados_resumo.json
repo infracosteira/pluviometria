@@ -1,7 +1,7 @@
 [
     {
         "Chave_ID": "1",
-        "link_csv": "https://github.com/infracosteira/pluviometria/raw/main/data/postos_solo/1RIACHAO_DE_CIMA.csv",
+        "link_csv": "https://cdn.jsdelivr.net/gh/infracosteira/pluviometria@main/data/postos_solo/1RIACHAO_DE_CIMA.csv",
         "Nome_Posto": " RIACHaO DE CIMA",
         "Nome_Municipio": "Tamboril",
         "Coordenada_Y": "-5.0599444444444",
