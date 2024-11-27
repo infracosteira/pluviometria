@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Input } from '@chakra-ui/react';
-import { Box, Button, ButtonGroup, Icon, Text } from "@chakra-ui/react";
+import { Box, Button, ButtonGroup, Icon, Text, Grid, GridItem } from "@chakra-ui/react";
 import {
   flexRender,
   getCoreRowModel,
@@ -26,20 +26,18 @@ async function downloadFile(fileUrl) {
     
     console.log("response:", response);
     
-    // Verifique se a resposta foi bem-sucedida
     if (response.status !== 200) {
       throw new Error(`Erro ${response.status}: ${response.statusText}`);
     }
 
-    const blob = response.data; // response.data já é um Blob
+    const blob = response.data;
     console.log("blob:", blob);
     
     const link = document.createElement('a');
     link.href = window.URL.createObjectURL(blob);
-    link.download = fileUrl.split('/').pop(); // Define o nome do arquivo a partir da URL
+    link.download = fileUrl.split('/').pop();
     link.click();
 
-    // Limpa o objeto URL após o uso
     window.URL.revokeObjectURL(link.href);
   } catch (error) {
     console.error('Erro ao buscar ou processar o arquivo CSV:', error);
@@ -48,7 +46,6 @@ async function downloadFile(fileUrl) {
 
 const columns = [
   {
-    //coluna "id"
     accessorKey: "Chave_ID",
     header: "ID",
     size: 70,
@@ -57,299 +54,254 @@ const columns = [
     filterFn: "includesString",
   },
   {
-    //coluna "Nome do posto"
     accessorKey: "Nome_Posto",
     header: "Nome do Posto",
     size: 200,
     cell: (props) => <p>{props.getValue()}</p>,
     enableColumnFilter: true,
     filterFn: "includesString",
-    },
-
-    {
-      accessorKey: "download",
-      header: "➥",
-      size: 90, 
-      cell: (props) => {
-        return (
-          <button
-            onClick={() => {
-              console.log(props.row.original.link_csv);
-              downloadFile(props.row.original.link_csv); // Chama a função de download com o link CSV
-            }}
-          >
-            Baixar
-          </button>
-        );
-      },
-    },
-
+  },
   {
-    //coluna "Nome_Municipio"
+    accessorKey: "download",
+    header: "Download",
+    size: 120, 
+    cell: (props) => {
+      return (
+        <button
+          onClick={() => {
+            downloadFile(props.row.original.link_csv);
+          }}
+        >
+          ⬇️  
+        </button>
+      );
+    },
+  },
+  {
     accessorKey: "Nome_Municipio",
     header: "Nome Municipio",
     size: 180,
     cell: EditableCell,
   },
   {
-    //Coordenada_X
-    accessorKey: "Coordenada_X",
-    header: "Coord_X",
-    size: 130,
-    cell: (props) => <p>{props.getValue()}</p>,
+    accessorKey: "Numero_anos_completos",
+    header: "Nº de anos completos",
+    size: 150,
+    cell: EditableCell,
   },
   {
-     //Coordenada_Y
-    accessorKey: "Coordenada_Y",
-    header: "Coord_Y",
-    size: 130,
-    cell: (props) => <p>{props.getValue()}</p>,
-  },
-  {
-    //Ano_Inicio
     accessorKey: "Ano_Inicio",
     header: "Ano de Inicio",
     size: 100,
     cell: EditableCell,
   },
   {
-     //Ano_Fim
     accessorKey: "Ano_Fim",
     header: "Ano de Fim",
     size: 100,
     cell: EditableCell,
   },
   {
-     //Mes_Inicio
+    accessorKey: "Mapa",
+    header: "Mapa",
+    size: 85,
+    cell: (props) => <a href={`https://maps.google.com/?q=${props.row.original.Coordenada_Y},${props.row.original.Coordenada_X}`} target='_blank'>🌎</a>,
+  }
+];
+
+const expandedColumns = [
+  {
+    accessorKey: "Coordenada_X",
+    header: "Coord_X",
+    size: 130,
+    cell: (props) => <p>{props.getValue()}</p>,
+  },
+  {
+    accessorKey: "Coordenada_Y",
+    header: "Coord_Y",
+    size: 130,
+    cell: (props) => <p>{props.getValue()}</p>,
+  },
+  {
     accessorKey: "Mes_Inicio",
-    header: "Mês de Inicio",
+    header: "Mês de inicio",
     size: 100,
     cell: EditableCell,
   },
   {
-    //Mes_Fim
     accessorKey: "Mes_Fim",
-    header: "Mês de Fim",
+    header: "Mês de fim",
     size: 100,
     cell: EditableCell,
   },
-  //Dados diarios meteriolologicos
-   {
-    //Total_dias_intervalo
-    accessorKey: "Total_dias_intervalo",
+  {
+    accessorKey: "Total_Dias_intervalo",
     header: "Nº total do intervalo",
     size: 150,
     cell: EditableCell,
   },
   {
-    //Dias_dados_medidos
     accessorKey: "Dias_dados_medidos",
     header: "Dias com dados medidos",
     size: 160,
     cell: EditableCell,
   },
   {
-    //Dias_falhos
     accessorKey: "Dias_falhos",
-    header: "dias com falhas",
+    header: "Dias com falhas",
     size: 130,
     cell: EditableCell,
   },
   {
-    //Percentual_dias_falhos
     accessorKey: "Percentual_dias_falhos",
     header: "Percentual de dias com falhas (%)",
     size: 190,
     cell: EditableCell,
   },
-  //Dados mensais meteriolologicos
   {
-    //Total de meses do intervalo
     accessorKey: "Total_meses_intervalo",
     header: "Total de meses do intervalo",
     size: 150,
     cell: EditableCell,
   },
   {
-    ///Nº de meses completos
     accessorKey: "Numero_meses_completos",
     header: "Nº de meses completos",
     size: 150,
     cell: EditableCell,
   },
   {
-    //Nº de meses com falhas
     accessorKey: "Numero_meses_falha",
     header: "Nº de meses com falhas",
     size: 150,
     cell: EditableCell,
   },
   {
-    //Percentual de meses com falhas (%)
     accessorKey: "Percentual_meses_falha",
     header: "Percentual de meses com falhas (%)",
     size: 190,
     cell: EditableCell,
   },
-//Dados Anuais meteriolologicos
-{
-  //Total de anos do intervalo
-  accessorKey: "Total_anos_intervalo",
-  header: "Total de anos do intervalo",
-  size: 150,
-  cell: EditableCell,
-},
-{
-  ///Nº de anos completos
-  accessorKey: "Numero_anos_completos",
-  header: "Nº de anos completos",
-  size: 150,
-  cell: EditableCell,
-},
-{
-  //Nº de anos com falhas
-  accessorKey: "Numero_anos_falha",
-  header: "Nº de anos com falhas",
-  size: 150,
-  cell: EditableCell,
-},
-{
-  //Percentual de anos com falhas (%)
-  accessorKey: "Percentual_anos_falha",
-  header: "Percentual de anos com falhas (%)",
-  size: 190,
-  cell: EditableCell,
-},
-//precipitação media anual
-{
-  //Precipitação média anual (mm)
-  accessorKey: "Precipitacao_media_anual",
-  header: "Precipitação média anual (mm)",
-  size: 175,
-  cell: EditableCell,
-},
-
-{
-  //coluna "Precipitação em Janeiro"
-  accessorKey: "Mes_Jan",
-  header: "Jan (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Fev",
-  header: "Feb (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Mar",
-  header: "Mar (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Apr",
-  header: "Apr (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_May",
-  header: "May (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Jun",
-  header: "jun (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Jul",
-  header: "Jul (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Aug",
-  header: "Aug (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Sep",
-  header: "Sep (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Oct",
-  header: "Oct (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Nov",
-  header: "Nov (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-{
-  //coluna "Precipitação em Fervereiro"
-  accessorKey: "Mes_Dec",
-  header: "Dec (mm)",
-  size: 115,
-  cell: (props) => <p>{props.getValue()}</p>,
-  enableColumnFilter: true,
-  filterFn: "includesString",
-
-},
-
+  {
+    accessorKey: "Total_anos_intervalo",
+    header: "Total de anos do intervalo",
+    size: 150,
+    cell: EditableCell,
+  },
+  {
+    accessorKey: "Numero_anos_falha",
+    header: "Nº de anos com falhas",
+    size: 150,
+    cell: EditableCell,
+  },
+  {
+    accessorKey: "Percentual_anos_falha",
+    header: "Percentual de anos com falhas (%)",
+    size: 190,
+    cell: EditableCell,
+  },
+  {
+    accessorKey: "Precipitacao_media_anual",
+    header: "Precipitação média anual (mm)",
+    size: 175,
+    cell: EditableCell,
+  },
+  {
+    accessorKey: "Mes_Jan",
+    header: "Jan (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_Fev",
+    header: "Feb (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_Mar",
+    header: "Mar (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_Apr",
+    header: "Apr (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_May",
+    header: "May (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_Jun",
+    header: "Jun (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_Jul",
+    header: "Jul (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_Aug",
+    header: "Aug (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_Sep",
+    header: "Sep (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_Oct",
+    header: "Oct (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_Nov",
+    header: "Nov (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
+  {
+    accessorKey: "Mes_Dec",
+    header: "Dec (mm)",
+    size: 115,
+    cell: (props) => <p>{props.getValue()}</p>,
+    enableColumnFilter: true,
+    filterFn: "includesString",
+  },
 ];
 
 const TaskTable = () => {
@@ -357,8 +309,6 @@ const TaskTable = () => {
   const [columnFilters, setColumnFilters] = useState([]);
   const [pageSize, setPageSize] = useState(15);
 
-  // Função para buscar os dados do GitHub
-  
   async function fetchDataFromGitHub() {
     try {
       const response = await fetch('https://raw.githubusercontent.com/infracosteira/pluviometria/refs/heads/main/data/dados_formatados_resumo.json');
@@ -367,14 +317,13 @@ const TaskTable = () => {
         throw new Error(`Erro ao buscar dados: ${response.statusText}`);
       }
 
-      const jsonData = await response.json(); // Parse do JSON
-      setData(jsonData); // Atualiza o estado com os dados carregados
+      const jsonData = await response.json();
+      setData(jsonData);
     } catch (error) {
       console.error('Erro ao carregar os dados:', error);
     }
   }
 
-  // useEffect para buscar os dados quando o componente é montado
   useEffect(() => {
     fetchDataFromGitHub();
   }, []);
@@ -398,8 +347,15 @@ const TaskTable = () => {
     getSortedRowModel: getSortedRowModel(),
     columnResizeMode: "onChange",
   });
-  
-  
+
+  const [expandedRows, setExpandedRows] = useState({});
+
+  const toggleRowExpansion = (rowIndex) => {
+    setExpandedRows((prev) => ({
+      ...prev,
+      [rowIndex]: !prev[rowIndex],
+    }));
+  };
 
   return (
     <Box>
@@ -407,11 +363,12 @@ const TaskTable = () => {
         <Filters
           columnFilters={columnFilters}
           setColumnFilters={setColumnFilters}
-          
         />
-        <Box className="table" w={table.getTotalSize()}>
+        <Box className="table">
           {table.getHeaderGroups().map((headerGroup) => (
             <Box className="tr" key={headerGroup.id}>
+              <Box className="th" w={50}>
+              </Box>
               {headerGroup.headers.map((header) => (
                 <Box className="th" w={header.getSize()} key={header.id}>
                   {header.column.columnDef.header}
@@ -439,58 +396,69 @@ const TaskTable = () => {
             </Box>
           ))}
           {table.getRowModel().rows.map((row) => (
-            <Box className="tr" key={row.id}>
-              {row.getVisibleCells().map((cell) => (
-                <Box className="td" w={cell.column.getSize()} key={cell.id}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            <Box key={row.id}>
+              <Box className="tr">
+                <Box className="td" w={50}>
+                  <Button onClick={() => toggleRowExpansion(row.index)}>
+                    {expandedRows[row.index] ? "🔽" : "▶️"}
+                  </Button>
                 </Box>
-              ))}
+                {row.getVisibleCells().map((cell) => (
+                  <Box className="td" w={cell.column.getSize()} key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </Box>
+                ))}
+              </Box>
+              {expandedRows[row.index] && (
+                <Grid templateColumns="repeat(4, 1fr)" gap={4} className="expanded-content">
+                  {expandedColumns.map((col) => (
+                    <GridItem key={col.accessorKey}>
+                      <Text fontWeight="bold">{col.header}:</Text>
+                      {flexRender(col.cell, {
+                        getValue: () => row.original[col.accessorKey],
+                      })}
+                    </GridItem>
+                  ))}
+                </Grid>
+              )}
             </Box>
           ))}
         </Box>
-        <br/>
+        <br />
         <Box>
-          {/* Paginacão */}
-          <Box  
-            alignItems="center" 
-            display="inline-block"
-            width="720"
-            heigh="540"
-            mr={9}
-          >
+          <Box alignItems="center" display="inline-block" width="720" heigh="540" mr={9}>
             <Text mb={2}>
               Página {table.getState().pagination.pageIndex + 1} de{" "}
               {table.getPageCount()}
             </Text>
             <ButtonGroup size="sm" isAttached variant="outline">
-            <Button
-  color="black"
-  borderColor="black"
-  onClick={() => {
-    setPagination((prev) => ({
-      ...prev,
-      pageIndex: Math.max(prev.pageIndex - 1, 0),
-    }));
-  }}
-  isDisabled={pagination.pageIndex === 0}
->
-  {"<"}
-</Button>
+              <Button
+                color="black"
+                borderColor="black"
+                onClick={() => {
+                  setPagination((prev) => ({
+                    ...prev,
+                    pageIndex: Math.max(prev.pageIndex - 1, 0),
+                  }));
+                }}
+                isDisabled={pagination.pageIndex === 0}
+              >
+                {"<"}
+              </Button>
 
-<Button
-  color="black"
-  borderColor="black"
-  onClick={() => {
-    setPagination((prev) => ({
-      ...prev,
-      pageIndex: Math.min(prev.pageIndex + 1, table.getPageCount() - 1),
-    }));
-  }}
-  isDisabled={pagination.pageIndex >= table.getPageCount() - 1}
->
-  {">"}
-</Button>
-
+              <Button
+                color="black"
+                borderColor="black"
+                onClick={() => {
+                  setPagination((prev) => ({
+                    ...prev,
+                    pageIndex: Math.min(prev.pageIndex + 1, table.getPageCount() - 1),
+                  }));
+                }}
+                isDisabled={pagination.pageIndex >= table.getPageCount() - 1}
+              >
+                {">"}
+              </Button>
             </ButtonGroup>
           </Box>
           <Box
@@ -505,8 +473,8 @@ const TaskTable = () => {
             <Input
               type="number"
               alignItems="center"
-              height='30px'
-              width='70px'
+              height="30px"
+              width="70px"
               value={pageSize}
               onChange={(e) => {
                 const value = e.target.value ? Number(e.target.value) : null;
@@ -517,43 +485,21 @@ const TaskTable = () => {
               max={100}
             />
           </Box>
-<Box mt={4}>
-  <Button
-    colorScheme="green"
-    onClick={() => {
-      const fileUrl = "https://github.com/infracosteira/pluviometria/raw/main/data/todos_os_postos.rar";
-      const link = document.createElement("a");
-      link.href = fileUrl;
-      link.download = "todos_os_postos.rar";
-      link.click();
-    }}
-  >
-    Baixar todos os postos
-  </Button>
-   {/* <Button
-        onClick={() => {
-          alert(`Legendas:
-          TDD: Total de dias do intervalo
-          NDM: Número de dias com dados medidos
-          DF: Número de dias com falhas
-          PDF: Percentual de dias com falhas
-          TMI: Total de meses do intervalo
-          NMC: Número de meses completos
-          NMCF: Número de meses com falhas
-          PMF: Percentual de meses com falhas
-          TAI: Total de anos do intervalo
-          NAC: Número de anos completos
-          NAF: Número de anos com falhas
-          PAF: Percentual de anos com falhas
-          PMA: Precipitação média anual`);
-        }}
-      >
-        ℹ️
-      </Button> */}
-      <br/>
-    </Box>
-
-        </Box>    
+          <Box mt={4}>
+            <Button
+              colorScheme="green"
+              onClick={() => {
+                const fileUrl = "https://github.com/infracosteira/pluviometria/raw/main/data/todos_os_postos.rar";
+                const link = document.createElement("a");
+                link.href = fileUrl;
+                link.download = "todos_os_postos.rar";
+                link.click();
+              }}
+            >
+              Baixar todos os postos
+            </Button>
+          </Box>
+        </Box>
       </Box>
     </Box>
   );

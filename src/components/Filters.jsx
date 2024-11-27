@@ -38,10 +38,10 @@ const Filters = ({ columnFilters, setColumnFilters }) => {
           onChange={(e) => onFilterChange("Nome_Municipio", e.target.value)}
         />
       </InputGroup>
-      <FilterPopover
+      {/* <FilterPopover
         columnFilters={columnFilters}
         setColumnFilters={setColumnFilters}
-      />
+      /> */}
     </HStack>
   );
 };
