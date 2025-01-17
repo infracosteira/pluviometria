@@ -46,9 +46,9 @@ async function downloadFile(fileUrl) {
 
 const columns = [
   {
-    accessorKey: "Chave_ID",
+    accessorKey: "ID",
     header: "ID",
-    size: 70,
+    size: 150,
     cell: (props) => <p>{props.getValue()}</p>,
     enableColumnFilter: true,
     filterFn: "includesString",
@@ -56,7 +56,7 @@ const columns = [
   {
     accessorKey: "Nome_Posto",
     header: "Nome do Posto",
-    size: 200,
+    size: 186,
     cell: (props) => <p>{props.getValue()}</p>,
     enableColumnFilter: true,
     filterFn: "includesString",
@@ -64,7 +64,7 @@ const columns = [
   {
     accessorKey: "download",
     header: "Download",
-    size: 120, 
+    size: 150, 
     cell: (props) => {
       return (
         <button
@@ -80,31 +80,31 @@ const columns = [
   {
     accessorKey: "Nome_Municipio",
     header: "Nome Municipio",
-    size: 180,
+    size: 215,
     cell: EditableCell,
   },
   {
     accessorKey: "Numero_anos_completos",
     header: "Nº de anos completos",
-    size: 150,
+    size: 200,
     cell: EditableCell,
   },
   {
     accessorKey: "Ano_Inicio",
     header: "Ano de Inicio",
-    size: 100,
+    size: 150,
     cell: EditableCell,
   },
   {
     accessorKey: "Ano_Fim",
     header: "Ano de Fim",
-    size: 100,
+    size: 150,
     cell: EditableCell,
   },
   {
     accessorKey: "Mapa",
     header: "Mapa",
-    size: 85,
+    size: 101,
     cell: (props) => <a href={`https://maps.google.com/?q=${props.row.original.Coordenada_Y},${props.row.original.Coordenada_X}`} target='_blank'>🌎</a>,
   }
 ];
