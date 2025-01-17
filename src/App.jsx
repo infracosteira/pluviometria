@@ -76,7 +76,7 @@ function App() {
           justifyContent={{ base: "center", sm: "flex-start" }} // Centraliza para telas pequenas, ajusta para grandes
           alignItems="center"
           gap={5}
-          ml={{ base: 0, sm: 130 }} // ml 130 em telas grandes, 0 em pequenas
+          ml={{ base: 0, sm: 105 }} // ml 105 em telas grandes, 0 em pequenas
           flexWrap="wrap"
         >
           <img
