@@ -10,9 +10,5 @@ supabase_key = os.environ.get("SUPABASE_KEY")
 print("Chave e url copiados com sucesso!")
 print(f"URL: {supabase_url}, KEY: {supabase_key[:5]}...") 
 
-
 supabase = create_client(supabase_url, supabase_key)
 
-data = supabase.table("pluviometria_duplicate").select("Nome_Posto,ID").eq("Nome_Posto", "ANTONIO DIOGO").execute()
-
-print(data)
