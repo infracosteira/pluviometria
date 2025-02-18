@@ -1,6 +1,6 @@
 import httpx
 
-url = "https://hqnkhorlbswlkclcfoob.supabase.co"
+url = "https://hqnkhorlbswlklcfvoob.supabase.co"
 try:
     response = httpx.get(url, timeout=10)
     print(response.status_code)

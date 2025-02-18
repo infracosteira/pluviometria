@@ -15,7 +15,6 @@ print("Chave e URL copiadas com sucesso!")
 supabase: Client = create_client(supabase_url, supabase_key)
 
 def upload_dataframe_to_supabase(dataframe: pd.DataFrame, table_name: str):
-    """Insere um DataFrame no Supabase."""
     
     data = dataframe.to_dict(orient="records")
 

@@ -12,3 +12,5 @@ print(f"URL: {supabase_url}, KEY: {supabase_key[:5]}...")
 
 supabase = create_client(supabase_url, supabase_key)
 
+print("Cliente Supabase criado com sucesso!")
+
