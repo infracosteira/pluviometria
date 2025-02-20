@@ -19,8 +19,8 @@ table_name = "pluviometria"
 
 test_data = df.to_dict(orient='records')
 
-batch_size = 1000  
+batch_size = 5000  
 for i in range(0, len(test_data), batch_size):
     batch = test_data[i:i + batch_size]
     response = supabase.table("pluviometria").insert(batch).execute()
-    print(f"Lote {i // batch_size + 1} inserido com sucesso! Resposta:", response)
+    print("Inserindo lote de dados...part",i + 1)
