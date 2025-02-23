@@ -1,13 +1,14 @@
 import altair as alt
 import param
-from data_store import DataStore, CARD_STYLE
-from panel.viewable import Viewer
 import panel as pn
+
+from panel.viewable import Viewer
+
+from .data_store import DataStore, CARD_STYLE
 
 
 class View(Viewer):
     data_store = param.ClassSelector(class_=DataStore)
-
 
 class Table(View):
     columns = param.List(default=[
@@ -22,7 +23,7 @@ class Table(View):
             page_size=13,
             stylesheets=[CARD_STYLE.format(padding="10px")],
             margin=10,
-            header_filters=True
+            header_filters=False
         )
         filename, button = table.download_menu(
             text_kwargs={
@@ -30,17 +31,8 @@ class Table(View):
                 'value': 'default.csv'
             },
             button_kwargs={'name': 'Download table'})
-        
-        '''
-        manufacturer_filter = pn.widgets.TextInput(name='County filter', value='')
-        def contains_filter(df, pattern, column):
-            if not pattern:
-                return df
-            return df[df[column].str.contains(pattern)]
-        table.add_filter(pn.bind(contains_filter, pattern=manufacturer_filter, column='t_county'))
-        '''
 
-        return pn.Row(pn.Column(filename, button, ), table)
+        return pn.Column(filename, button, table)
 
 
 class Histogram(View):
@@ -87,4 +79,7 @@ class Indicators(View):
                                  name="Avg. Rotor Diameter (m)",
                                  format="{value:,.2f}",
                                  **style),
+            #pn.indicators.String(value="\n".join(list(self.data_store.#top_manufacturers)),
+            #                     name="Top Manufacturers",
+            #                     **style)
         )

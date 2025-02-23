@@ -8,12 +8,24 @@ dependencies = [
     "altair>=5.5.0",
     "hvplot>=0.11.2",
     "pandas>=2.2.3",
-    "panel>=1.5.5",
+    "panel[fastapi]>=1.5.5",
     "polars>=1.20.0",
 ]
 
 [dependency-groups]
 dev = [
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "taskipy>=1.14.1",
     "watchfiles>=1.0.4",
     "yapf>=0.43.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+addopts = "-p no:warnings"
+
+[tool.taskipy.tasks]
+run = "fastapi dev src/main.py"  # task run
+test = "pytest -s -x --cov=src -vv"
+post_test = "coverage html"
