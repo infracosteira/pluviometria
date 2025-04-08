@@ -1,2 +1,2 @@
 # FastApi
-Estudando o FastApi do dunossauro ;)
+Desenvolvendo o site usando fastapi
