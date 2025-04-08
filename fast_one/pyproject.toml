@@ -1,0 +1,51 @@
+[project]
+name = "fast-one"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Isaak Yuri",email = "isaak.yuri@aluno.unilab.edu.br"}
+]
+readme = "README.md"
+requires-python = ">=3.13,<4.0"
+
+dependencies = [
+    "fastapi (>=0.115.12,<0.116.0)"
+]
+
+[tool.taskipy.tasks]
+lint = 'ruff check'
+pre_format = 'ruff check --fix'
+format = 'ruff format'
+
+run = 'fastapi dev fast_one/app.py'
+
+pre_test = 'task lint'
+test = 'pytest -s -x --cov=fast_one -vv'
+post_test = 'coverage html'
+
+[tool.pytest.ini_options]
+pythonpath = "."
+addopts = '-p no:warnings'
+
+[tool.ruff]
+line-length = 79
+extend-include = ['migrations']
+
+[tool.ruff.lint]
+preview = true
+select = ['I', 'F', 'E', 'W', 'PL', 'PT']
+
+[tool.ruff.format]
+preview = true
+quote-style = 'single'
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.11.4"
+pytest = "^8.3.5"
+pytest-cov = "^6.1.1"
+taskipy = "^1.14.1"
+
