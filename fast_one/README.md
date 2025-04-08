@@ -1,6 +1,6 @@
 Para rodar a aplicação localmente basta dar o comando 'poetry shell' (iniciar o ambiente virtual antes!)
 
-'fastapi dev ./nome_da_pasta/nome_do_arquivo'
+task --list para ver todos os comandos possiveis em atalhos
 
 foram instaladas algumas bibliotecas auxiliares para ajudar no desenvolvimento do projeto
 
