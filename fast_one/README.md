@@ -1,8 +1,4 @@
-Para rodar a aplicação localmente basta dar o comando
-
-iniciar o ambiente virtual antes!
-
-'poetry shell' para isso na pasta do pyprojecj.toml
+Para rodar a aplicação localmente basta dar o comando 'poetry shell' (iniciar o ambiente virtual antes!)
 
 'fastapi dev ./nome_da_pasta/nome_do_arquivo'
 
