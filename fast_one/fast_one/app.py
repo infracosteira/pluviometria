@@ -4,8 +4,8 @@ import panel as pn
 from fastapi import FastAPI
 from panel.io.fastapi import add_applications
 from http import HTTPStatus
-from schemas import Message, UserSchema
-from dashboard import build_dashboard
+from .schemas import Message, UserSchema
+from .dashboard import build_dashboard
 import panel as pn
 
 app = FastAPI()

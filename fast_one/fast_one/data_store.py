@@ -7,8 +7,9 @@ class DataStore(param.Parameterized):
     selected_municipio = param.String(default=None)
 
     @param.depends("selected_municipio")
-    def filtered_registro(self):
+    def get_filtered_registro(self):
         if self.selected_municipio:
-            postos_ids = self.posto_data[self.posto_data["municipio"] == self.selected_municipio]["id"]
-            return self.registro_data[self.registro_data["posto_id"].isin(postos_ids)]
+            postos = self.posto_data[self.posto_data["municipio"] == self.selected_municipio]
+            ids = postos["id_posto"].values
+            return self.registro_data[self.registro_data["id_posto"].isin(ids)]
         return self.registro_data
