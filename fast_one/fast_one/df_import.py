@@ -1,20 +1,27 @@
 import os
+
 import pandas as pd
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 load_dotenv()
-url = os.environ["SUPABASE_URL"]
-key = os.environ["SUPABASE_KEY"]
+url = os.environ['SUPABASE_URL']
+key = os.environ['SUPABASE_KEY']
 supabase: Client = create_client(url, key)
 
-def load_data():
-    municipio = supabase.table("municipio").select("*").execute().data
-    posto = supabase.table("posto").select("*").execute().data
-    registro = supabase.table("registro").select("*").execute().data
 
-    return (
-        pd.DataFrame(municipio),
-        pd.DataFrame(posto),
-        pd.DataFrame(registro)
-    )
+def load_municipio():
+    return pd.DataFrame(supabase.table('municipio').select('*').execute().data)
+
+
+def load_posto():
+    return pd.DataFrame(supabase.table('posto').select('*').execute().data)
+
+
+def load_registro():
+    return pd.DataFrame(supabase.table('registro').select('*').execute().data)
+
+
+municipio = load_municipio()
+
+print(municipio.head(5))
