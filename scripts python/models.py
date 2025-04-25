@@ -26,7 +26,7 @@ class NomePosto:
     __tablename__ = "posto"
 
     id_posto: Mapped[int] = mapped_column(primary_key=True)
-    cod_ibge: Mapped[int] = mapped_column(ForeignKey("municipio.id"))
+    cod_ibge: Mapped[int] = mapped_column(ForeignKey("municipio.cod_ibge"))
     nome_posto: Mapped[str] = mapped_column()
     numero_dias_medidos: Mapped[int] = mapped_column()
     numero_dias_falhos: Mapped[int] = mapped_column()

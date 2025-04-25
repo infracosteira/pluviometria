@@ -12,9 +12,12 @@ supabase_key = os.environ.get("SUPABASE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 print("Conectado ao Supabase!")
 
+import pandas as pd
+
 # Carregar dados
-df_ibge = pd.read_csv('data/municipios.csv', encoding='latin1', sep=';')
-df = pd.read_csv('data/maindatabase.csv', encoding='latin1', sep=',')
+df_ibge = pd.read_csv('./data/municipios.csv', encoding='latin1', sep=';')
+
+df = pd.read_csv('./data/maindatabase_sa.csv', encoding='latin1', sep=',')
 
 # Processar municípios
 municipios = df_ibge[['cod_ibge', 'municipio']].drop_duplicates().reset_index(drop=True)
@@ -29,8 +32,8 @@ postos = df[['ID', 'Nome_Posto', 'Nome_Municipio', 'Dias_dados_medidos', 'Dias_f
              'Numero_anos_completos', 'Precipitacao_media_anual', 'Coordenada_Y', 'Coordenada_X']].drop_duplicates()
 
 postos['Nome_Municipio'] = postos['Nome_Municipio'].str.strip().str.lower()
+postos['Nome_Posto'] = postos['Nome_Posto'].str.strip().str.lower()
 
-# Adicionar cod_ibge aos postos com base no nome do município
 postos = postos.merge(municipios[['cod_ibge', 'municipio']], 
                       left_on='Nome_Municipio', 
                       right_on='municipio', 
@@ -57,8 +60,7 @@ postos.rename(columns={
 }, inplace=True)
 
 # Processar registros
-registros = df[['Dia1', 'Total', 'Meses', 'Anos', 'ID']].rename(columns={
-    'Dia1': 'dia',
+registros = df[['Total', 'Meses', 'Anos', 'ID']].rename(columns={
     'Total': 'total_dia',
     'Meses': 'mes',
     'Anos': 'ano',
@@ -70,7 +72,7 @@ registros.insert(0, 'id', range(len(registros)))
 municipios.columns = municipios.columns.str.lower()
 postos.columns = postos.columns.str.lower()
 registros.columns = registros.columns.str.lower()
-
+postos.drop(columns=['nome_municipio'], inplace=True)
 # Inserção em lotes
 batch_size = 5000
 
