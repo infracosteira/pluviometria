@@ -9,14 +9,13 @@ class NomeMunicipio:
 
     id: Mapped[int] = mapped_column(primary_key=True)
     municipio: Mapped[str] = mapped_column()
-    cod_ibge: Mapped[int] = mapped_column()
+    cod_ibge: Mapped[int] = mapped_column(unique=True)
 
 @reg.mapped_as_dataclass
 class Registro:
     __tablename__ = "registro"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    dia: Mapped[float] = mapped_column()
     total_dia: Mapped[float] = mapped_column()
     mes: Mapped[int] = mapped_column()
     ano: Mapped[int] = mapped_column()
@@ -27,6 +26,7 @@ class NomePosto:
     __tablename__ = "posto"
 
     id_posto: Mapped[int] = mapped_column(primary_key=True)
+    cod_ibge: Mapped[int] = mapped_column(ForeignKey("municipio.id"))
     nome_posto: Mapped[str] = mapped_column()
     numero_dias_medidos: Mapped[int] = mapped_column()
     numero_dias_falhos: Mapped[int] = mapped_column()

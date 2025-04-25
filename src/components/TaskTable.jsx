@@ -135,7 +135,7 @@ const expandedColumns = [
     cell: EditableCell,
   },
   {
-    accessorKey: "Total_Dias_intervalo",
+    accessorKey: "Total_dias_intervalo",
     header: "Nº total do intervalo",
     size: 150,
     cell: EditableCell,

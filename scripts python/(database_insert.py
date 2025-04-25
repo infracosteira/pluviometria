@@ -12,16 +12,31 @@ supabase_key = os.environ.get("SUPABASE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 print("Conectado ao Supabase!")
 
+# Carregar dados
 df_ibge = pd.read_csv('data/municipios.csv', encoding='latin1', sep=';')
 df = pd.read_csv('data/maindatabase.csv', encoding='latin1', sep=',')
 
+# Processar municípios
 municipios = df_ibge[['cod_ibge', 'municipio']].drop_duplicates().reset_index(drop=True)
 municipios.insert(0, 'id', range(len(municipios)))
 
-postos = df[['ID', 'Nome_Posto', 'Dias_dados_medidos', 'Dias_falhos', 
+# Padronizar nomes para minúsculas e remover espaços extras
+municipios['municipio'] = municipios['municipio'].str.strip().str.lower()
+
+# Processar postos
+postos = df[['ID', 'Nome_Posto', 'Nome_Municipio', 'Dias_dados_medidos', 'Dias_falhos', 
              'Numero_meses_completos', 'Numero_meses_falha', 'Numero_anos_falha', 
              'Numero_anos_completos', 'Precipitacao_media_anual', 'Coordenada_Y', 'Coordenada_X']].drop_duplicates()
 
+postos['Nome_Municipio'] = postos['Nome_Municipio'].str.strip().str.lower()
+
+# Adicionar cod_ibge aos postos com base no nome do município
+postos = postos.merge(municipios[['cod_ibge', 'municipio']], 
+                      left_on='Nome_Municipio', 
+                      right_on='municipio', 
+                      how='left').drop(columns=['municipio'])
+
+# Tipos e transformações
 integer_columns = ['ID', 'Dias_dados_medidos', 'Dias_falhos', 'Numero_meses_completos', 
                    'Numero_meses_falha', 'Numero_anos_falha', 'Numero_anos_completos']
 postos[integer_columns] = postos[integer_columns].astype(int)
@@ -41,6 +56,7 @@ postos.rename(columns={
     'Numero_anos_completos': 'numero_anos_medidos'
 }, inplace=True)
 
+# Processar registros
 registros = df[['Dia1', 'Total', 'Meses', 'Anos', 'ID']].rename(columns={
     'Dia1': 'dia',
     'Total': 'total_dia',
@@ -48,14 +64,15 @@ registros = df[['Dia1', 'Total', 'Meses', 'Anos', 'ID']].rename(columns={
     'Anos': 'ano',
     'ID': 'id_posto'
 })
-
 registros.insert(0, 'id', range(len(registros)))
 
+# Garantir que todas as colunas estejam em lowercase
 municipios.columns = municipios.columns.str.lower()
 postos.columns = postos.columns.str.lower()
 registros.columns = registros.columns.str.lower()
 
-batch_size = 5000 
+# Inserção em lotes
+batch_size = 5000
 
 def insert_batch(table_name, data):
     """ Insere os dados em lotes para evitar sobrecarga """
@@ -65,12 +82,9 @@ def insert_batch(table_name, data):
         supabase.table(table_name).insert(batch).execute()
         print(f"Inserindo lote na tabela {table_name}... Parte {i//batch_size + 1}")
 
-# Enviar os dados para cada tabela
-
+# Enviar dados para o Supabase
 insert_batch("municipio", municipios)
-
 insert_batch("posto", postos)
-
 insert_batch("registro", registros)
 
 print("Inserção concluída com sucesso!")
