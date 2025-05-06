@@ -7,6 +7,7 @@ load_dotenv()
 url = os.environ["SUPABASE_URL"]
 key = os.environ["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
+print("Supabase client created")
 
 def load_municipio():
     return pd.DataFrame(supabase.table("municipio").select("*").execute().data)
