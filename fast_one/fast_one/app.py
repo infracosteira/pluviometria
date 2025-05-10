@@ -8,6 +8,8 @@ from fastapi.responses import HTMLResponse
 from folium import Map
 from panel.widgets import Tabulator
 import pandas as pd
+from folium.plugins import MousePosition
+from geopy.distance import geodesic
 
 pn.extension()
 
@@ -20,24 +22,17 @@ def read_root():
     m.add_child(folium.ClickForMarker(popup="Marcador adicionado!"))
     return m.get_root().render()
 
-
-
 # Carregamento dos dados
 municipio = load_municipio()
 posto = load_posto()
+registro = load_registro()
 
-
-# Supondo que a coluna 'coordenadas' esteja no formato "lat,lon"
 posto[['Latitude', 'Longitude']] = posto['coordenadas'].str.split(',', expand=True).astype(float)
 
 def gerar_mapa(lat, lon):
     m = folium.Map(location=[lat, lon], zoom_start=5)
     folium.Marker(location=[lat, lon], popup="Posto").add_to(m)
     return pn.pane.HTML(m._repr_html_(), height=500)
-
-# Tabela interativa com botão
-import panel as pn
-pn.extension()
 
 def tabela_com_mapa():
     mapa_view = pn.pane.HTML(height=500)
@@ -71,24 +66,14 @@ def tabela_com_mapa():
         mapa_view
     )
 
-
-
-registro = load_registro()
-
-# Widgets
-municipio_search = pn.widgets.TextInput(name='Search Municipio', placeholder='Type to search...')
-registro_search = pn.widgets.TextInput(name='Search Registro', placeholder='Type to search...')
-row_slider = pn.widgets.IntSlider(name='Nº linhas', start=1, end=max(len(municipio), len(posto), len(registro)), value=10)
+#municipio_search = pn.widgets.TextInput(name='Search Municipio', placeholder='Type to search...')
+#registro_search = pn.widgets.TextInput(name='Search Registro', placeholder='Type to search...')
+#row_slider = pn.widgets.IntSlider(name='Nº linhas', start=1, end=max(len(municipio), len(posto), len(registro)), value=10)
 
 pn.extension('tabulator')
-
-# 1. Carregar CSV com links diretos (uma única coluna)
 df_links = pd.read_csv('./fast_one/links.csv', header=None, names=['link_csv'])
-
-# 2. Extrair o "id_nomeposto" do final da URL
 df_links['id_posto'] = df_links['link_csv'].str.extract(r'/([^/]+)\.csv')
 
-# 3. Gerar botão de download formatado como HTML
 def gerar_botao(link):
     return f"""
     <a href="{link}" target="_blank">
@@ -100,7 +85,6 @@ def gerar_botao(link):
 
 df_links['Download'] = df_links['link_csv'].apply(gerar_botao)
 
-# 4. Criar tabela interativa com Panel Tabulator
 tabela_download = pn.widgets.Tabulator(
     df_links[['id_posto', 'Download']],
     pagination='local',
@@ -121,7 +105,10 @@ def format_dataframe_brl(df):
     df_copy = df.copy()
     num_cols = df_copy.select_dtypes(include=['float', 'int']).columns
     for col in num_cols:
-        df_copy[col] = df_copy[col].apply(lambda x: f"{x:,.1f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        if col == 'precipitação media anual':
+            df_copy[col] = df_copy[col].apply(lambda x: f"{x:,.1f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        else:
+            df_copy[col] = df_copy[col].apply(lambda x: f"{int(x):,}".replace(",", ".") if pd.notnull(x) else x)
     return df_copy
 
 
@@ -145,31 +132,110 @@ def tabela_posto():
     return pn.Column(
         table
     )
+def gerar_mapa_interativo():
+        m = folium.Map(location=[-5.4984, -39.3206], zoom_start=7)
 
-# Demais painéis
-municipio_pane = pn.bind(
-    lambda search, rows: pn.pane.DataFrame(get_filtered_dataframe(municipio, search, rows), name='Municipio'),
-    municipio_search, row_slider
-)
+        # Marcadores dos postos
+        for _, row in posto.iterrows():
+            folium.Marker(
+            location=[row['Latitude'], row['Longitude']],
+            radius=3,
+            color='blue',
+            fill=True,
+            fill_color='blue',
+            popup=row['nome_posto'],  # Mostra o nome do posto ao clicar
+            tooltip=row['nome_posto'],  # Mostra o nome ao passar o mouse
+            ).add_to(m)
 
-registro_pane = pn.bind(
-    lambda search, rows: pn.pane.DataFrame(get_filtered_dataframe(registro, search, rows), name='Registro'),
-    registro_search, row_slider
-)
+        # Mostrar posição do mouse
+        MousePosition().add_to(m)
+
+        # Ativa clique para gerar marcador (usuário copia coord)
+        folium.LatLngPopup().add_to(m)  # <-- Mostra coordenadas ao clicar
+
+        # Corrigido: use m._repr_html_() para garantir renderização correta no Panel
+        return pn.pane.HTML(m._repr_html_(), height=500, sizing_mode='stretch_width')
+
+    # Busca por raio
+def pontos_proximos(lat_centro, lon_centro, raio_km):
+        centro = (lat_centro, lon_centro)
+        mask = posto.apply(
+            lambda r: geodesic(centro, (r['Latitude'], r['Longitude'])).km <= raio_km, axis=1
+        )
+        return posto[mask]
+
+
+def view_mapa():
+        mapa_html = pn.pane.HTML(gerar_mapa_interativo().object, height=500, sizing_mode='stretch_width')
+
+        # Mesmo widgets reutilizados
+        coord_input = pn.widgets.TextInput(name="Coordenadas (lat,lon)", placeholder="-7.1,-39.68")
+        raio_slider = pn.widgets.IntSlider(name="Raio de busca (km)", start=1, end=100, value=20)
+        resultado_busca = pn.pane.DataFrame(height=200)
+        botao_buscar = pn.widgets.Button(name="Buscar postos próximos", button_type="primary")
+
+        def buscar_pontos(event=None):
+            try:
+                lat_str, lon_str = coord_input.value.split(',')
+                lat, lon = float(lat_str), float(lon_str)
+                raio = raio_slider.value
+                df = pontos_proximos(lat, lon, raio)
+                resultado_busca.object = df[['id_posto', 'nome_posto', 'Latitude', 'Longitude']]
+            except Exception as e:
+                resultado_busca.object = f"Erro: {e}"
+
+        botao_buscar.on_click(buscar_pontos)
+
+        # Script para copiar coordenadas do clique no mapa e preencher automaticamente
+        callback_js = """
+        <script>
+        setTimeout(() => {
+            const mapIframes = document.querySelectorAll('iframe');
+            mapIframes.forEach(iframe => {
+                iframe.contentWindow.document.addEventListener('click', function(e) {
+                    const popup = iframe.contentWindow.document.querySelector('.leaflet-popup-content');
+                    if (popup) {
+                        const coordText = popup.textContent.trim();
+                        const match = coordText.match(/([-\\d\\.]+),\\s*([-\\d\\.]+)/);
+                        if (match) {
+                            const latlon = `${match[1]},${match[2]}`;
+                            const input = parent.document.querySelector('input[type="text"][placeholder="-7.1,-39.68"]');
+                            if (input) {
+                                input.value = latlon;
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
+                                const btn = parent.document.querySelector('button:contains("Buscar postos próximos")');
+                                if (btn) btn.click();
+                            }
+                        }
+                    }
+                });
+            });
+        }, 2000);
+        </script>
+        """
+
+        return pn.Column(
+            pn.pane.Markdown("## Mapa interativo — clique para buscar postos próximos"),
+            mapa_html,
+            pn.pane.HTML(callback_js, sizing_mode='stretch_width'),  # Executa script
+            coord_input,
+            raio_slider,
+            botao_buscar,
+            pn.pane.Markdown("### Postos encontrados:"),
+            resultado_busca
+        )
+
 
 # Adicionando ao aplicativo
 add_applications(
     {
         '/tabelas': pn.Row(
             pn.Column('Mapa dos Postos', tabela_com_mapa()),
-            pn.Column('Dados dos postos resumidos',tabela_posto()),
-            #pn.Column('### Municipio', municipio_search, row_slider, municipio_pane),
-            #pn.Column('### Registro', registro_search, registro_pane),
+            pn.Column('Dados dos postos resumidos', tabela_posto()),
             pn.Column('Download CSVs', tabela_download),
-            
-            
-            
         ),
+        '/mapa': view_mapa(),  # <-- NOVO ENDPOINT
     },
     app=app,
 )
+
