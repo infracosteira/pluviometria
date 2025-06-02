@@ -18,6 +18,7 @@ pre_format = 'ruff check --fix'
 format = 'ruff format'
 
 run = 'fastapi dev fast_one/app.py'
+run2 = 'fastapi dev fast_one/app_copy.py'
 
 pre_test = 'task lint'
 test = 'pytest -s -x --cov=fast_one -vv'

@@ -10,6 +10,8 @@ from panel.widgets import Tabulator
 import pandas as pd
 from folium.plugins import MousePosition
 from folium.plugins import BeautifyIcon
+from fastapi import Request, Form
+from fastapi.responses import HTMLResponse
 
 pn.extension()
 
@@ -46,6 +48,41 @@ pn.extension(raw_css=[
     }
     """
 ])
+
+
+@app.get("/", response_class=HTMLResponse)
+async def show_form():
+    return """
+    <html>
+        <head>
+            <title>Caixa de Texto</title>
+        </head>
+        <body>
+            <h2>Digite algo:</h2>
+            <form action="/" method="post">
+                <input type="text" name="user_input">
+                <button type="submit">Enviar</button>
+            </form>
+        </body>
+    </html>
+    """
+
+@app.post("/", response_class=HTMLResponse)
+async def process_form(user_input: str = Form(...)):
+    result = user_input.upper()
+    return f"""
+    <html>
+        <head>
+            <title>Resultado</title>
+        </head>
+        <body>
+            <h2>Texto em maiúsculas:</h2>
+            <p>{result}</p>
+            <a href="/">Voltar</a>
+        </body>
+    </html>
+    """
+
 def view_mapa():
     # Mapa interativo com marcadores dos postos
     def gerar_mapa_interativo():
