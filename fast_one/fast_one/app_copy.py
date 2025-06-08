@@ -10,8 +10,9 @@ from panel.widgets import Tabulator
 import pandas as pd
 from folium.plugins import MousePosition
 from folium.plugins import BeautifyIcon
-from fastapi import Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Query
+from supabase import create_client, Client
+import os
 
 pn.extension()
 
@@ -31,74 +32,85 @@ def gerar_mapa(lat, lon):
 
 pn.extension('tabulator')
 
-pn.extension(raw_css=[
-    """
-    .painel-lateral {
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        background-color: #f9f9f9;
-        padding: 15px;
-        min-width: 380px;
-        max-width: 420px;
-        height: 100vh;
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-start;
-    }
-    """
-])
+app = FastAPI()
 
+# Conectando com Supabase
+url = os.getenv("SUPABASE_URL")
+key = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(url, key)
 
-@app.get("/", response_class=HTMLResponse)
-async def show_form():
-    return """
-    <html>
-        <head>
-            <title>Caixa de Texto</title>
-        </head>
-        <body>
-            <h2>Digite algo:</h2>
-            <form action="/" method="post">
-                <input type="text" name="user_input">
-                <button type="submit">Enviar</button>
-            </form>
-        </body>
-    </html>
+# Endpoint para buscar o posto pluviométrico mais próximo via PostGIS
+@app.get("/posto-mais-proximo")
+def get_posto_mais_proximo(lat: float = Query(...), lon: float = Query(...)):
+    sql = f"""
+    SELECT 
+        id_posto,
+        nome_posto,
+        ST_Distance(
+            localizacao::geography,
+            ST_SetSRID(ST_MakePoint({lon}, {lat}), 4326)::geography
+        ) AS distancia
+    FROM posto
+    WHERE localizacao IS NOT NULL
+    ORDER BY localizacao <-> ST_SetSRID(ST_MakePoint({lon}, {lat}), 4326)
+    LIMIT 1;
     """
 
-@app.post("/", response_class=HTMLResponse)
-async def process_form(user_input: str = Form(...)):
-    result = user_input.upper()
-    return f"""
-    <html>
-        <head>
-            <title>Resultado</title>
-        </head>
-        <body>
-            <h2>Texto em maiúsculas:</h2>
-            <p>{result}</p>
-            <a href="/">Voltar</a>
-        </body>
-    </html>
-    """
+    # Faz a chamada diretamente via REST
+    response = supabase.rpc("sql", {"q": sql}).execute()
+
+    if response.get("data"):
+        result = response["data"][0]
+        return {
+            "id_posto": result["id_posto"],
+            "nome_posto": result["nome_posto"],
+            "distancia_m": round(result["distancia"], 2)
+        }
+    else:
+        return {"erro": "Nenhum posto encontrado."}
+
+
+def to_uppercase():
+    texto_input = pn.widgets.TextInput(name="Digite algo", placeholder="Digite um texto...")
+    resultado_output = pn.pane.Markdown("**Aguardando...**")
+    botao_converter = pn.widgets.Button(name="Converter para MAIÚSCULAS", button_type="primary")
+
+    def ao_clicar(event):
+        texto = texto_input.value
+        resultado = texto.upper()
+        resultado_output.object = f"**Resultado:** {resultado}"
+
+    botao_converter.on_click(ao_clicar)
+
+    layout = pn.Column(
+        pn.pane.Markdown("### 🔠 Conversor para MAIÚSCULAS"),
+        texto_input,
+        botao_converter,
+        resultado_output,
+        width=400
+    )
+
+    return layout
 
 def view_mapa():
     # Mapa interativo com marcadores dos postos
     def gerar_mapa_interativo():
         m = folium.Map(location=[-5.4984, -39.3206], zoom_start=7, width='50%', height='450px')
+
+        # Adiciona os marcadores dos postos
         for _, row in posto.iterrows():
             lat = row['Latitude']
             lon = row['Longitude']
             nome = row['nome_posto']
-            id_posto = row['id_posto']  # Supondo que a coluna de id se chama 'id'
-            # Informações adicionais do posto
+            id_posto = row['id_posto']
             info_html = f"""
-            <b>{nome}</b><br>
-            ID: {id_posto}<br>
-            Latitude: {lat:.6f}<br>
-            Longitude: {lon:.6f}<br>
-            <button onclick="navigator.clipboard.writeText('{id_posto},{lat:.6f},{lon:.6f}')">🔗</button>
+            <div style="text-align:center;">
+                <b>{nome}</b><br>
+                ID: {id_posto}<br>
+                Latitude: {lat:.6f}<br>
+                Longitude: {lon:.6f}<br>
+                <button style="margin-top:8px;" onclick="navigator.clipboard.writeText('{id_posto},{lat:.6f},{lon:.6f}')">🔗</button>
+            </div>
             """
             folium.Marker(
                 location=[lat, lon],
@@ -107,15 +119,49 @@ def view_mapa():
                     border_color='#1976d2',
                     text_color='white',
                     background_color='#1976d2',
-                    number=id_posto,  # Mostra o id do posto no marcador
+                    number=id_posto,
                 ),
                 popup=folium.Popup(info_html, max_width=250),
                 tooltip=f"{nome} (ID: {id_posto})",
             ).add_to(m)
+
+        # Adiciona posição do mouse
         MousePosition().add_to(m)
-        folium.LatLngPopup().add_to(m)
+
+        # Adiciona funcionalidade de clique para mostrar popup com botão de copiar coordenadas
+        from folium import MacroElement
+        from jinja2 import Template
+
+        class ClickPopup(MacroElement):
+            _template = Template("""
+                {% macro script(this, kwargs) %}
+                function onMapClick(e) {
+                    var lat = e.latlng.lat.toFixed(6);
+                    var lon = e.latlng.lng.toFixed(6);
+                    var popupContent = `
+                    <div style="text-align:center;">
+                        <b>Latitude:</b> ${lat}<br>
+                        <b>Longitude:</b> ${lon}<br><br>
+                        <button onclick="navigator.clipboard.writeText('x,' + ${lat} + ',' + ${lon})">
+                        🔗
+                        </button>
+                    </div>
+                    `;
+                    var popup = L.popup()
+                        .setLatLng(e.latlng)
+                        .setContent(popupContent)
+                        .openOn({{this._parent.get_name()}});
+                }
+                {{this._parent.get_name()}}.on('click', onMapClick);
+                {% endmacro %}
+            """)
+
+        m.add_child(ClickPopup())
+
+        # Renderiza no Panel
         mapa_html = m._repr_html_()
         return pn.pane.HTML(mapa_html, height=450, sizing_mode='stretch_width')
+
 
     mapa_html = gerar_mapa_interativo()
 
@@ -163,10 +209,13 @@ def view_mapa():
             sizing_mode='stretch_width'
         ),
         css_classes=["painel-lateral"],
-        sizing_mode='stretch_height'
+        sizing_mode='stretch_height',
+        width=350,
+        margin=(20, 40, 0, 0)  # Adiciona margem superior de 20px
     )
 
     layout = pn.Row(
+        pn.Spacer(width=400),
         painel_lateral,
         pn.Column(
             mapa_html,
@@ -181,6 +230,7 @@ def view_mapa():
 add_applications(
     {
         '/mapa': view_mapa(),
+        '/': to_uppercase(),
     },
     app=app,
 )

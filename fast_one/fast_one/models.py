@@ -16,7 +16,6 @@ class Registro:
     __tablename__ = "registro"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    #dia: Mapped[float] = mapped_column()
     total_dia: Mapped[float] = mapped_column()
     mes: Mapped[int] = mapped_column()
     ano: Mapped[int] = mapped_column()
