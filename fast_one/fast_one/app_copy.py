@@ -1,37 +1,98 @@
 import panel as pn
-from .df_import import load_municipio, load_posto, load_registro
+from .df_import import load_municipio, load_posto, load_registro, load_diario
 from fastapi import FastAPI
 from panel.io.fastapi import add_applications
 import folium
-from panel.io.state import state
-from fastapi.responses import HTMLResponse
-from folium import Map
-from panel.widgets import Tabulator
 import pandas as pd
 from folium.plugins import MousePosition
 from folium.plugins import BeautifyIcon
 from fastapi import FastAPI, Query
 from supabase import create_client, Client
 import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+from fast_one.models import NomePosto
+from sqlalchemy import select, func
+from shapely.geometry import Point
+from geoalchemy2.shape import from_shape
+
+from sqlalchemy import Column, Integer, Float, String
+from geoalchemy2 import Geometry
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+
+class Posto(Base):
+    __tablename__ = "posto"
+
+    id_posto = Column(Integer, primary_key=True, index=True)
+    nome_posto = Column(String)  # Se essa coluna não existir ainda, você pode ignorar
+    anos_medidos = Column(Integer)
+    precipitacao_media_anual = Column(Float)
+    coordenadas = Column(Geometry(geometry_type="POINT", srid=4326))
+
+DATABASE_URL = f"postgresql://postgres:344gwd5W1MDwZ9up@db.hqnkhorlbswlklcfvoob.supabase.co:6543/postgres"
 
 pn.extension()
 
 app = FastAPI()
 
+def painel_busca_postgis(condensado=True):
+    session = SessionLocal()
+    input_coords = pn.widgets.TextInput(name="Coordenadas (lon,lat)", placeholder="-34.91,-8.13")
+    buscar_btn = pn.widgets.Button(name="Buscar posto mais próximo", button_type="primary", width=260)
+    tabela = pn.pane.DataFrame(width=600, height=200)
+    resultado_nome = pn.pane.Markdown("", width=600)
+
+    def buscar(event=None):
+        try:
+            lon, lat = map(float, input_coords.value.split(","))
+            ponto = from_shape(Point(lat, lon), srid=4326)
+
+            stmt = (
+                select(
+                    Posto.nome_posto,       # r[0]
+                    Posto.id_posto,         # r[1]
+                    Posto.coordenadas,      # r[2]
+                    func.ST_Distance(Posto.coordenadas, ponto).label("distancia")  # r[3]
+                )
+                .where(Posto.coordenadas != None)
+                .order_by(Posto.coordenadas.op('<->')(ponto))
+                .limit(3)
+            )
+            resultados = session.execute(stmt).fetchall()
+            data = [{
+                "Nome": r[0],
+                "ID": r[1],
+                "Coordenadas": str(r[2]),
+                "Distância (graus)": round(r[3], 6)
+            } for r in resultados]
+            tabela.object = data
+            if resultados:
+                resultado_nome.object = f"**Posto mais próximo:** {resultados[0][0]} (ID {resultados[0][1]})"
+            else:
+                resultado_nome.object = "Nenhum posto encontrado."
+        except Exception as e:
+            tabela.object = f"Erro: {e}"
+            resultado_nome.object = ""
+
+    buscar_btn.on_click(buscar)
+
+    return pn.Column(
+        "# Buscar posto mais próximo de uma coordenada",
+        pn.Row(input_coords, buscar_btn),
+        resultado_nome,
+        tabela
+    )
+
+
 # Carregamento dos dados
 municipio = load_municipio()
 posto = load_posto()
 registro = load_registro()
-
-posto[['Latitude', 'Longitude']] = posto['coordenadas'].str.split(',', expand=True).astype(float)
-
-def gerar_mapa(lat, lon):
-    m = folium.Map(location=[lat, lon], zoom_start=5)
-    folium.Marker(location=[lat, lon], popup="Posto").add_to(m)
-    return pn.pane.HTML(m._repr_html_(), height=500)
+registro_diario = load_diario()
 
 pn.extension('tabulator')
-
 app = FastAPI()
 
 # Conectando com Supabase
@@ -39,58 +100,10 @@ url = os.getenv("SUPABASE_URL")
 key = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(url, key)
 
-# Endpoint para buscar o posto pluviométrico mais próximo via PostGIS
-@app.get("/posto-mais-proximo")
-def get_posto_mais_proximo(lat: float = Query(...), lon: float = Query(...)):
-    sql = f"""
-    SELECT 
-        id_posto,
-        nome_posto,
-        ST_Distance(
-            localizacao::geography,
-            ST_SetSRID(ST_MakePoint({lon}, {lat}), 4326)::geography
-        ) AS distancia
-    FROM posto
-    WHERE localizacao IS NOT NULL
-    ORDER BY localizacao <-> ST_SetSRID(ST_MakePoint({lon}, {lat}), 4326)
-    LIMIT 1;
-    """
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
-    # Faz a chamada diretamente via REST
-    response = supabase.rpc("sql", {"q": sql}).execute()
-
-    if response.get("data"):
-        result = response["data"][0]
-        return {
-            "id_posto": result["id_posto"],
-            "nome_posto": result["nome_posto"],
-            "distancia_m": round(result["distancia"], 2)
-        }
-    else:
-        return {"erro": "Nenhum posto encontrado."}
-
-
-def to_uppercase():
-    texto_input = pn.widgets.TextInput(name="Digite algo", placeholder="Digite um texto...")
-    resultado_output = pn.pane.Markdown("**Aguardando...**")
-    botao_converter = pn.widgets.Button(name="Converter para MAIÚSCULAS", button_type="primary")
-
-    def ao_clicar(event):
-        texto = texto_input.value
-        resultado = texto.upper()
-        resultado_output.object = f"**Resultado:** {resultado}"
-
-    botao_converter.on_click(ao_clicar)
-
-    layout = pn.Column(
-        pn.pane.Markdown("### 🔠 Conversor para MAIÚSCULAS"),
-        texto_input,
-        botao_converter,
-        resultado_output,
-        width=400
-    )
-
-    return layout
 
 def view_mapa():
     # Mapa interativo com marcadores dos postos
@@ -230,7 +243,7 @@ def view_mapa():
 add_applications(
     {
         '/mapa': view_mapa(),
-        '/': to_uppercase(),
+        '/': painel_busca_postgis(),
     },
     app=app,
 )
