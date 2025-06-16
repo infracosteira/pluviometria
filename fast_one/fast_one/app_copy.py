@@ -11,11 +11,9 @@ from supabase import create_client, Client
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from fast_one.models import NomePosto
 from sqlalchemy import select, func
 from shapely.geometry import Point
 from geoalchemy2.shape import from_shape
-
 from sqlalchemy import Column, Integer, Float, String
 from geoalchemy2 import Geometry
 from sqlalchemy.ext.declarative import declarative_base
@@ -40,50 +38,41 @@ app = FastAPI()
 def painel_busca_postgis(condensado=True):
     session = SessionLocal()
     input_coords = pn.widgets.TextInput(name="Coordenadas (lon,lat)", placeholder="-34.91,-8.13")
+    limite = pn.widgets.TextInput(name="LIMITE", placeholder="100")
     buscar_btn = pn.widgets.Button(name="Buscar posto mais próximo", button_type="primary", width=260)
-    tabela = pn.pane.DataFrame(width=600, height=200)
     resultado_nome = pn.pane.Markdown("", width=600)
 
     def buscar(event=None):
         try:
             lon, lat = map(float, input_coords.value.split(","))
             ponto = from_shape(Point(lat, lon), srid=4326)
+            x=10
 
             stmt = (
                 select(
-                    Posto.nome_posto,       # r[0]
-                    Posto.id_posto,         # r[1]
-                    Posto.coordenadas,      # r[2]
-                    func.ST_Distance(Posto.coordenadas, ponto).label("distancia")  # r[3]
+                    Posto.nome_posto,
+                    Posto.id_posto,
+                    Posto.coordenadas,
+                    func.ST_Distance(Posto.coordenadas, ponto).label("distancia")
                 )
                 .where(Posto.coordenadas != None)
                 .order_by(Posto.coordenadas.op('<->')(ponto))
-                .limit(3)
+                .limit(limite.value if limite.value.isdigit() else x)
             )
             resultados = session.execute(stmt).fetchall()
-            data = [{
-                "Nome": r[0],
-                "ID": r[1],
-                "Coordenadas": str(r[2]),
-                "Distância (graus)": round(r[3], 6)
-            } for r in resultados]
-            tabela.object = data
             if resultados:
-                resultado_nome.object = f"**Posto mais próximo:** {resultados[0][0]} (ID {resultados[0][1]})"
+                nomes = [f"{r[0]} (ID {r[1]})" for r in resultados]
+                resultado_nome.object = f"**{x} postos mais próximos:**<br>" + "<br>".join(nomes)
             else:
                 resultado_nome.object = "Nenhum posto encontrado."
         except Exception as e:
-            tabela.object = f"Erro: {e}"
-            resultado_nome.object = ""
+            resultado_nome.object = f"Erro: {e}"
 
     buscar_btn.on_click(buscar)
 
     return pn.Column(
         "# Buscar posto mais próximo de uma coordenada",
-        pn.Row(input_coords, buscar_btn),
-        resultado_nome,
-        tabela
-    )
+        pn.Row(input_coords, buscar_btn,limite), resultado_nome)
 
 
 # Carregamento dos dados
@@ -148,14 +137,18 @@ def view_mapa():
         class ClickPopup(MacroElement):
             _template = Template("""
                 {% macro script(this, kwargs) %}
+                if (!window.clickPopupIdCounter) {
+                    window.clickPopupIdCounter = 1;
+                }
                 function onMapClick(e) {
                     var lat = e.latlng.lat.toFixed(6);
                     var lon = e.latlng.lng.toFixed(6);
+                    var id = window.clickPopupIdCounter++;
                     var popupContent = `
                     <div style="text-align:center;">
                         <b>Latitude:</b> ${lat}<br>
                         <b>Longitude:</b> ${lon}<br><br>
-                        <button onclick="navigator.clipboard.writeText('x,' + ${lat} + ',' + ${lon})">
+                        <button onclick="navigator.clipboard.writeText('${id},' + ${lat} + ',' + ${lon})">
                         🔗
                         </button>
                     </div>
