@@ -17,6 +17,7 @@ from geoalchemy2.shape import from_shape
 from sqlalchemy import Column, Integer, Float, String
 from geoalchemy2 import Geometry
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import MetaData, Table
 
 Base = declarative_base()
 
@@ -35,45 +36,121 @@ pn.extension()
 
 app = FastAPI()
 
+def buscar_registros_validos_para_ponto(lon, lat, data_inicio, data_fim, n_postos=10):
+    session = SessionLocal()
+    ponto = from_shape(Point(lat, lon), srid=4326)
+
+    # Buscar os N postos mais próximos
+    stmt_postos = (
+        select(
+            Posto.id_posto,
+            Posto.nome_posto,
+            func.ST_Distance(Posto.coordenadas, ponto).label("distancia")
+        )
+        .where(Posto.coordenadas != None)
+        .order_by(Posto.coordenadas.op('<->')(ponto))
+        .limit(n_postos)
+    )
+    postos_proximos = session.execute(stmt_postos).fetchall()
+    ids_postos = [p[0] for p in postos_proximos]
+
+    # Buscar registros
+    metadata = MetaData()
+    registro_diario = Table("registro-diario", metadata, autoload_with=engine)
+
+    stmt_registros = (
+        select(
+            registro_diario.c.id_posto,
+            registro_diario.c.data,
+            registro_diario.c.valor
+        )
+        .where(
+            registro_diario.c.id_posto.in_(ids_postos),
+            registro_diario.c.data >= data_inicio,
+            registro_diario.c.data <= data_fim
+        )
+    )
+    registros = session.execute(stmt_registros).fetchall()
+    df = pd.DataFrame(registros, columns=["id_posto", "data", "valor"])
+
+    # Criar grade de datas completa no intervalo
+    datas = pd.date_range(data_inicio, data_fim, freq="D")
+
+    # Pivot para ter posto nas colunas
+    df_pivot = df.pivot(index="data", columns="id_posto", values="valor")
+
+    # Reindexar para garantir todas as datas
+    df_pivot = df_pivot.reindex(datas)
+
+    # Fallback por ordem dos postos mais próximos
+    resultado = []
+    for data in df_pivot.index:
+        for id_posto in ids_postos:
+            try:
+                valor = df_pivot.loc[data, id_posto]
+            except KeyError:
+                valor = None
+            if pd.notna(valor) and valor != 999:
+                resultado.append({"data": data, "id_posto": id_posto, "valor": valor})
+                break
+        else:
+            # Nenhum valor encontrado para essa data
+            resultado.append({"data": data, "id_posto": None, "valor": None})
+
+    df_final = pd.DataFrame(resultado)
+    return df_final
+
 def painel_busca_postgis(condensado=True):
     session = SessionLocal()
     input_coords = pn.widgets.TextInput(name="Coordenadas (lon,lat)", placeholder="-34.91,-8.13")
-    limite = pn.widgets.TextInput(name="LIMITE", placeholder="100")
-    buscar_btn = pn.widgets.Button(name="Buscar posto mais próximo", button_type="primary", width=260)
+    limite = pn.widgets.TextInput(name="LIMITE", placeholder="10")
+    data_inicio = pn.widgets.DatePicker(name="Data início", value=pd.Timestamp("1974-01-01"))
+    data_fim = pn.widgets.DatePicker(name="Data fim", value=pd.Timestamp("2025-01-01"))
+    buscar_btn = pn.widgets.Button(name="Buscar série diária", button_type="primary", width=260)
     resultado_nome = pn.pane.Markdown("", width=600)
+    tabela_resultado = pn.widgets.Tabulator(pd.DataFrame(), width=600, height=300, pagination='local', page_size=1000)
+    download_filename = None
+    download_button = None
 
     def buscar(event=None):
         try:
             lon, lat = map(float, input_coords.value.split(","))
-            ponto = from_shape(Point(lat, lon), srid=4326)
-            x=10
-
-            stmt = (
-                select(
-                    Posto.nome_posto,
-                    Posto.id_posto,
-                    Posto.coordenadas,
-                    func.ST_Distance(Posto.coordenadas, ponto).label("distancia")
-                )
-                .where(Posto.coordenadas != None)
-                .order_by(Posto.coordenadas.op('<->')(ponto))
-                .limit(limite.value if limite.value.isdigit() else x)
-            )
-            resultados = session.execute(stmt).fetchall()
-            if resultados:
-                nomes = [f"{r[0]} (ID {r[1]})" for r in resultados]
-                resultado_nome.object = f"**{x} postos mais próximos:**<br>" + "<br>".join(nomes)
+            n_postos = int(limite.value) if limite.value.isdigit() else 10
+            di = data_inicio.value
+            df = data_fim.value
+            if not di or not df:
+                resultado_nome.object = "Selecione intervalo de datas."
+                tabela_resultado.value = pd.DataFrame()
+                return
+            df_result = buscar_registros_validos_para_ponto(lon, lat, di, df, n_postos)
+            if not df_result.empty:
+                df_result = df_result.copy()
+                df_result["data"] = pd.to_datetime(df_result["data"]).dt.strftime("%Y-%m-%d")
+                resultado_nome.object = f"**Série diária para o ponto ({lon:.4f},{lat:.4f})**"
+                tabela_resultado.value = df_result[["data", "id_posto", "valor"]]
             else:
-                resultado_nome.object = "Nenhum posto encontrado."
+                resultado_nome.object = "Nenhum dado encontrado."
+                tabela_resultado.value = pd.DataFrame()
         except Exception as e:
             resultado_nome.object = f"Erro: {e}"
+            tabela_resultado.value = pd.DataFrame()
 
     buscar_btn.on_click(buscar)
 
-    return pn.Column(
-        "# Buscar posto mais próximo de uma coordenada",
-        pn.Row(input_coords, buscar_btn,limite), resultado_nome)
+    download_filename, download_button = tabela_resultado.download_menu(
+        text_kwargs={'name': 'Nome do arquivo', 'value': 'serie_diaria.csv'},
+        button_kwargs={'name': 'Baixar tabela'}
+    )
 
+    return pn.Column(
+        "# Buscar série diária para ponto",
+        pn.Row(input_coords, limite, data_inicio, data_fim, buscar_btn),
+        resultado_nome,
+        pn.Row(
+            pn.Column(download_filename, download_button),
+            tabela_resultado
+        )
+    )
 
 # Carregamento dos dados
 municipio = load_municipio()
@@ -92,6 +169,13 @@ supabase: Client = create_client(url, key)
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+
+
+
+
+
+
 
 
 def view_mapa():
@@ -133,6 +217,7 @@ def view_mapa():
         # Adiciona funcionalidade de clique para mostrar popup com botão de copiar coordenadas
         from folium import MacroElement
         from jinja2 import Template
+        from sqlalchemy import Table, MetaData, and_
 
         class ClickPopup(MacroElement):
             _template = Template("""
