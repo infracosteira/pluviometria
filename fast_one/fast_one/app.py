@@ -105,11 +105,13 @@ def painel_busca_postgis(condensado=True):
     input_coords = pn.widgets.TextInput(name="Coordenadas (lon,lat)", placeholder="-34.91,-8.13")
     limite = pn.widgets.TextInput(name="LIMITE", placeholder="10")
     data_inicio = pn.widgets.DatePicker(name="Data início", value=pd.Timestamp("1974-01-01"))
-    data_fim = pn.widgets.DatePicker(name="Data fim")
+    data_fim = pn.widgets.DatePicker(name="Data fim", value=pd.Timestamp("2025-01-01"))
     buscar_btn = pn.widgets.Button(name="Buscar série diária", button_type="primary", width=260)
     resultado_nome = pn.pane.Markdown("", width=600)
-    tabela_resultado = pn.pane.DataFrame(pd.DataFrame(), width=600, height=300)
-    
+    tabela_resultado = pn.widgets.Tabulator(pd.DataFrame(), width=600, height=300, pagination='local', page_size=1000)
+    download_filename = None
+    download_button = None
+
     def buscar(event=None):
         try:
             lon, lat = map(float, input_coords.value.split(","))
@@ -118,25 +120,36 @@ def painel_busca_postgis(condensado=True):
             df = data_fim.value
             if not di or not df:
                 resultado_nome.object = "Selecione intervalo de datas."
+                tabela_resultado.value = pd.DataFrame()
                 return
             df_result = buscar_registros_validos_para_ponto(lon, lat, di, df, n_postos)
             if not df_result.empty:
+                df_result = df_result.copy()
+                df_result["data"] = pd.to_datetime(df_result["data"]).dt.strftime("%Y-%m-%d")
                 resultado_nome.object = f"**Série diária para o ponto ({lon:.4f},{lat:.4f})**"
-                tabela_resultado.object = df_result[["data", "id_posto", "valor"]]
+                tabela_resultado.value = df_result[["data", "id_posto", "valor"]]
             else:
                 resultado_nome.object = "Nenhum dado encontrado."
-                tabela_resultado.object = pd.DataFrame()
+                tabela_resultado.value = pd.DataFrame()
         except Exception as e:
             resultado_nome.object = f"Erro: {e}"
-            tabela_resultado.object = pd.DataFrame()
+            tabela_resultado.value = pd.DataFrame()
 
     buscar_btn.on_click(buscar)
+
+    download_filename, download_button = tabela_resultado.download_menu(
+        text_kwargs={'name': 'Nome do arquivo', 'value': 'serie_diaria.csv'},
+        button_kwargs={'name': 'Baixar tabela'}
+    )
 
     return pn.Column(
         "# Buscar série diária para ponto",
         pn.Row(input_coords, limite, data_inicio, data_fim, buscar_btn),
         resultado_nome,
-        tabela_resultado
+        pn.Row(
+            pn.Column(download_filename, download_button),
+            tabela_resultado
+        )
     )
 
 # Carregamento dos dados

@@ -47,3 +47,4 @@ def load_registro():
 def load_diario():
     return pd.DataFrame(supabase.table("registro-diario").select("*").execute().data)
 
+municipio = load_municipio()

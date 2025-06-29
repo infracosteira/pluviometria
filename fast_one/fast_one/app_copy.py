@@ -7,8 +7,10 @@ import pandas as pd
 from folium.plugins import MousePosition
 from folium.plugins import BeautifyIcon
 from fastapi import FastAPI, Query
+from fastapi.responses import FileResponse
 from supabase import create_client, Client
 import os
+import io
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import select, func
@@ -25,7 +27,7 @@ class Posto(Base):
     __tablename__ = "posto"
 
     id_posto = Column(Integer, primary_key=True, index=True)
-    nome_posto = Column(String)  # Se essa coluna não existir ainda, você pode ignorar
+    nome_posto = Column(String)
     anos_medidos = Column(Integer)
     precipitacao_media_anual = Column(Float)
     coordenadas = Column(Geometry(geometry_type="POINT", srid=4326))
@@ -36,121 +38,211 @@ pn.extension()
 
 app = FastAPI()
 
-def buscar_registros_validos_para_ponto(lon, lat, data_inicio, data_fim, n_postos=10):
+def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_postos=10):
     session = SessionLocal()
-    ponto = from_shape(Point(lat, lon), srid=4326)
 
-    # Buscar os N postos mais próximos
-    stmt_postos = (
-        select(
-            Posto.id_posto,
-            Posto.nome_posto,
-            func.ST_Distance(Posto.coordenadas, ponto).label("distancia")
-        )
-        .where(Posto.coordenadas != None)
-        .order_by(Posto.coordenadas.op('<->')(ponto))
-        .limit(n_postos)
-    )
-    postos_proximos = session.execute(stmt_postos).fetchall()
-    ids_postos = [p[0] for p in postos_proximos]
-
-    # Buscar registros
-    metadata = MetaData()
-    registro_diario = Table("registro-diario", metadata, autoload_with=engine)
-
-    stmt_registros = (
-        select(
-            registro_diario.c.id_posto,
-            registro_diario.c.data,
-            registro_diario.c.valor
-        )
-        .where(
-            registro_diario.c.id_posto.in_(ids_postos),
-            registro_diario.c.data >= data_inicio,
-            registro_diario.c.data <= data_fim
-        )
-    )
-    registros = session.execute(stmt_registros).fetchall()
-    df = pd.DataFrame(registros, columns=["id_posto", "data", "valor"])
+    # Processar entrada
+    linhas = [linha.strip() for linha in entrada_texto.strip().splitlines() if linha.strip()]
+    pontos = []
+    for linha in linhas:
+        partes = linha.split(",")
+        if len(partes) != 3:
+            continue
+        id_ponto = partes[0].strip()
+        lon = float(partes[1].strip())
+        lat = float(partes[2].strip())
+        pontos.append({'id': id_ponto, 'lon': lon, 'lat': lat})
 
     # Criar grade de datas completa no intervalo
     datas = pd.date_range(data_inicio, data_fim, freq="D")
+    df_resultado = pd.DataFrame({'data': datas})
+    df_postos_usados = pd.DataFrame({'data': datas})
 
-    # Pivot para ter posto nas colunas
-    df_pivot = df.pivot(index="data", columns="id_posto", values="valor")
+    metadata = MetaData()
+    registro_diario = Table("registro-diario", metadata, autoload_with=engine)
 
-    # Reindexar para garantir todas as datas
-    df_pivot = df_pivot.reindex(datas)
+    for ponto in pontos:
+        ponto_geom = from_shape(Point(ponto['lat'], ponto['lon']), srid=4326)
 
-    # Fallback por ordem dos postos mais próximos
-    resultado = []
-    for data in df_pivot.index:
-        for id_posto in ids_postos:
-            try:
-                valor = df_pivot.loc[data, id_posto]
-            except KeyError:
-                valor = None
-            if pd.notna(valor) and valor != 999:
-                resultado.append({"data": data, "id_posto": id_posto, "valor": valor})
-                break
-        else:
-            # Nenhum valor encontrado para essa data
-            resultado.append({"data": data, "id_posto": None, "valor": None})
+        # Buscar postos mais próximos
+        stmt_postos = (
+            select(
+                Posto.id_posto,
+                Posto.nome_posto,
+                func.ST_Distance(Posto.coordenadas, ponto_geom).label("distancia")
+            )
+            .where(Posto.coordenadas != None)
+            .order_by(Posto.coordenadas.op('<->')(ponto_geom))
+            .limit(n_postos)
+        )
+        postos_proximos = session.execute(stmt_postos).fetchall()
+        ids_postos = [p[0] for p in postos_proximos]
 
-    df_final = pd.DataFrame(resultado)
-    return df_final
+        # Buscar registros para esses postos
+        stmt_registros = (
+            select(
+                registro_diario.c.id_posto,
+                registro_diario.c.data,
+                registro_diario.c.valor
+            )
+            .where(
+                registro_diario.c.id_posto.in_(ids_postos), 
+                registro_diario.c.data >= data_inicio,
+                registro_diario.c.data <= data_fim
+            )
+        )
+        registros = session.execute(stmt_registros).fetchall()
+        df = pd.DataFrame(registros, columns=["id_posto", "data", "valor"])
 
-def painel_busca_postgis(condensado=True):
-    session = SessionLocal()
-    input_coords = pn.widgets.TextInput(name="Coordenadas (lon,lat)", placeholder="-34.91,-8.13")
+        # Pivot para ter posto nas colunas
+        df_pivot = df.pivot(index="data", columns="id_posto", values="valor")
+
+        # Reindexar para garantir todas as datas
+        df_pivot = df_pivot.reindex(datas)
+
+        # Fallback por ordem dos postos mais próximos
+        valores = []
+        postos_usados = []
+        for data in df_pivot.index:
+            valor_data = None
+            posto_usado = None
+            for id_posto in ids_postos:
+                try:
+                    valor = df_pivot.loc[data, id_posto]
+                except KeyError:
+                    valor = None
+                if pd.notna(valor) and valor != 999:
+                    valor_data = valor
+                    posto_usado = id_posto
+                    break
+            valores.append(valor_data)
+            postos_usados.append(posto_usado)
+
+        df_resultado[ponto['id']] = valores
+        df_postos_usados[ponto['id']] = postos_usados
+
+    session.close()
+    os.makedirs("temp", exist_ok=True)
+    df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")
+    df_resultado.to_csv("temp/serie_diaria_multipontos.csv", index=False, sep=";")
+    # Retorna os dois dataframes: valores e postos usados
+    return df_resultado, df_postos_usados
+
+def painel_busca_multiplos_pontos():
+
+    input_coords = pn.widgets.TextAreaInput(
+        name="Coordenadas (id,lon,lat)", 
+        placeholder="id1,-34.91,-8.13\nid2,-34.85,-8.10", 
+        width=400, 
+        height=150
+    )
     limite = pn.widgets.TextInput(name="LIMITE", placeholder="10")
     data_inicio = pn.widgets.DatePicker(name="Data início", value=pd.Timestamp("1974-01-01"))
     data_fim = pn.widgets.DatePicker(name="Data fim", value=pd.Timestamp("2025-01-01"))
     buscar_btn = pn.widgets.Button(name="Buscar série diária", button_type="primary", width=260)
+
     resultado_nome = pn.pane.Markdown("", width=600)
-    tabela_resultado = pn.widgets.Tabulator(pd.DataFrame(), width=600, height=300, pagination='local', page_size=1000)
-    download_filename = None
-    download_button = None
+    spinner = pn.indicators.LoadingSpinner(value=False, width=40, height=40, color="primary")
+
+    tabela_resultado = pn.widgets.Tabulator(pd.DataFrame(), width=800, height=400, pagination='local', page_size=1000)
+    tabela_postos = pn.widgets.Tabulator(pd.DataFrame(), width=800, height=400, pagination='local', page_size=1000)
+
+    # Substitui os botões antigos pelos FileDownload
+    def get_serie_csv():
+        with open("temp/serie_diaria_multipontos.csv", "rb") as f:
+            return io.BytesIO(f.read())
+
+    def get_postos_csv():
+        with open("temp/postos_utilizados.csv", "rb") as f:
+            return io.BytesIO(f.read())
+
+    btn_download_serie = pn.widgets.FileDownload(
+        label="📥 Baixar Série Diária",
+        filename="serie_diaria_multipontos.csv",
+        callback=get_serie_csv,
+        button_type="success",
+        visible=False,
+        width=200
+    )
+
+    btn_download_postos = pn.widgets.FileDownload(
+        label="📥 Baixar Postos Utilizados",
+        filename="postos_utilizados.csv",
+        callback=get_postos_csv,
+        button_type="success",
+        visible=False,
+        width=200
+    )
 
     def buscar(event=None):
+        spinner.value = True
+        resultado_nome.object = "⏳ Carregando..."
+        tabela_resultado.value = pd.DataFrame()
+        tabela_postos.value = pd.DataFrame()
+        btn_download_serie.visible = False
+        btn_download_postos.visible = False
+
         try:
-            lon, lat = map(float, input_coords.value.split(","))
+            texto = input_coords.value
             n_postos = int(limite.value) if limite.value.isdigit() else 10
             di = data_inicio.value
             df = data_fim.value
-            if not di or not df:
-                resultado_nome.object = "Selecione intervalo de datas."
-                tabela_resultado.value = pd.DataFrame()
+
+            if not texto or not di or not df:
+                resultado_nome.object = "⚠️ Preencha todas as informações."
                 return
-            df_result = buscar_registros_validos_para_ponto(lon, lat, di, df, n_postos)
+
+            df_result, df_postos_usados = buscar_series_para_multiplos_pontos(texto, di, df, n_postos)
+
             if not df_result.empty:
-                df_result = df_result.copy()
                 df_result["data"] = pd.to_datetime(df_result["data"]).dt.strftime("%Y-%m-%d")
-                resultado_nome.object = f"**Série diária para o ponto ({lon:.4f},{lat:.4f})**"
-                tabela_resultado.value = df_result[["data", "id_posto", "valor"]]
+                df_postos_usados["data"] = pd.to_datetime(df_postos_usados["data"]).dt.strftime("%Y-%m-%d")
+
+                tabela_resultado.value = df_result
+                tabela_postos.value = df_postos_usados
+                resultado_nome.object = "**✅ Série diária para os pontos informados.**"
+                
+                os.makedirs("temp", exist_ok=True)
+                df_result.to_csv("temp/serie_diaria_multipontos.csv", index=False, sep=";")
+                df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")
+
+                btn_download_serie.visible = True
+                btn_download_postos.visible = True
             else:
-                resultado_nome.object = "Nenhum dado encontrado."
-                tabela_resultado.value = pd.DataFrame()
+                resultado_nome.object = "⚠️ Nenhum dado encontrado."
+
         except Exception as e:
-            resultado_nome.object = f"Erro: {e}"
-            tabela_resultado.value = pd.DataFrame()
+            resultado_nome.object = f"❌ Erro: {e}"
+
+        finally:
+            spinner.value = False
 
     buscar_btn.on_click(buscar)
 
-    download_filename, download_button = tabela_resultado.download_menu(
-        text_kwargs={'name': 'Nome do arquivo', 'value': 'serie_diaria.csv'},
-        button_kwargs={'name': 'Baixar tabela'}
-    )
-
     return pn.Column(
-        "# Buscar série diária para ponto",
-        pn.Row(input_coords, limite, data_inicio, data_fim, buscar_btn),
+        "# Buscar série diária para múltiplos pontos",
+        pn.Row(input_coords, limite, data_inicio, data_fim, buscar_btn, spinner),
         resultado_nome,
-        pn.Row(
-            pn.Column(download_filename, download_button),
-            tabela_resultado
+        pn.Row(btn_download_serie, btn_download_postos),
+        pn.Tabs(
+            ("📊 Série diária", tabela_resultado),
+            ("📌 Postos utilizados", tabela_postos),
         )
     )
+
+
+@app.get("/download/{filename}")
+def download_file(filename: str):
+    filepath = f"temp/{filename}"
+    if os.path.exists(filepath):
+        return FileResponse(
+            path=filepath,
+            media_type="text/csv",
+            filename=filename
+        )
+    return {"erro": "Arquivo não encontrado."}
+
+
 
 # Carregamento dos dados
 municipio = load_municipio()
@@ -169,7 +261,6 @@ supabase: Client = create_client(url, key)
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
-
 
 
 
@@ -218,6 +309,7 @@ def view_mapa():
         from folium import MacroElement
         from jinja2 import Template
         from sqlalchemy import Table, MetaData, and_
+        
 
         class ClickPopup(MacroElement):
             _template = Template("""
@@ -321,7 +413,7 @@ def view_mapa():
 add_applications(
     {
         '/mapa': view_mapa(),
-        '/': painel_busca_postgis(),
+        '/': painel_busca_multiplos_pontos(),
     },
     app=app,
 )
