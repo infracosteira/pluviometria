@@ -9,8 +9,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 
 DATABASE_URL = f"postgresql://postgres:344gwd5W1MDwZ9up@db.hqnkhorlbswlklcfvoob.supabase.co:6543/postgres"
 
-print(SUPABASE_URL)
-
 # Criando o motor de conexão
 engine = create_engine(DATABASE_URL, pool_size=10, max_overflow=20)
 
