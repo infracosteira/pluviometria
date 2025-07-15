@@ -38,7 +38,7 @@ pn.extension()
 
 app = FastAPI()
 
-def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_postos=10, progresso_callback=None):
+def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_postos=10):
     session = SessionLocal()
 
     # Processar entrada
@@ -53,6 +53,7 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         lat = float(partes[2].strip())
         pontos.append({'id': id_ponto, 'lon': lon, 'lat': lat})
 
+    # Criar grade de datas completa no intervalo
     datas = pd.date_range(data_inicio, data_fim, freq="D")
     df_resultado = pd.DataFrame({'data': datas})
     df_postos_usados = pd.DataFrame({'data': datas})
@@ -60,10 +61,10 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
     metadata = MetaData()
     registro_diario = Table("registro-diario", metadata, autoload_with=engine)
 
-    total_pontos = len(pontos)
-    for idx, ponto in enumerate(pontos):
+    for ponto in pontos:
         ponto_geom = from_shape(Point(ponto['lat'], ponto['lon']), srid=4326)
 
+        # Buscar postos mais próximos
         stmt_postos = (
             select(
                 Posto.id_posto,
@@ -77,6 +78,7 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         postos_proximos = session.execute(stmt_postos).fetchall()
         ids_postos = [p[0] for p in postos_proximos]
 
+        # Buscar registros para esses postos
         stmt_registros = (
             select(
                 registro_diario.c.id_posto,
@@ -91,9 +93,14 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         )
         registros = session.execute(stmt_registros).fetchall()
         df = pd.DataFrame(registros, columns=["id_posto", "data", "valor"])
+
+        # Pivot para ter posto nas colunas
         df_pivot = df.pivot(index="data", columns="id_posto", values="valor")
+
+        # Reindexar para garantir todas as datas
         df_pivot = df_pivot.reindex(datas)
 
+        # Fallback por ordem dos postos mais próximos
         valores = []
         postos_usados = []
         for data in df_pivot.index:
@@ -114,14 +121,11 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         df_resultado[ponto['id']] = valores
         df_postos_usados[ponto['id']] = postos_usados
 
-        # Atualiza progresso se callback fornecido
-        if progresso_callback is not None:
-            progresso_callback(int(20 + 60 * (idx + 1) / total_pontos))
-
     session.close()
     os.makedirs("temp", exist_ok=True)
     df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")
     df_resultado.to_csv("temp/serie_diaria_multipontos.csv", index=False, sep=";")
+    # Retorna os dois dataframes: valores e postos usados
     return df_resultado, df_postos_usados
 
 def painel_busca_multiplos_pontos():
@@ -145,16 +149,15 @@ def painel_busca_multiplos_pontos():
 
     buscar_btn = pn.widgets.Button(name="Buscar série", button_type="primary", width=260)
     resultado_nome = pn.pane.Markdown("", width=600)
-
-    progresso = pn.indicators.Progress(name='Progresso', value=0, width=260, bar_color='primary')
+    spinner = pn.indicators.LoadingSpinner(value=False, width=40, height=40, color="primary")
 
     tabela_resultado = pn.widgets.Tabulator(pd.DataFrame(), width=800, height=400, pagination='local', page_size=1000)
     tabela_postos = pn.widgets.Tabulator(pd.DataFrame(), width=800, height=400, pagination='local', page_size=1000)
 
     btn_download_serie = pn.widgets.FileDownload(
         label="📥 Baixar Série",
-        filename="serie_multipontos.csv",
-        callback=lambda: io.BytesIO(b""),
+        filename="serie_multipontos.csv",  # será substituído dinamicamente
+        callback=lambda: io.BytesIO(b""),  # dummy inicial
         button_type="success",
         visible=False,
         width=200
@@ -163,18 +166,20 @@ def painel_busca_multiplos_pontos():
     btn_download_postos = pn.widgets.FileDownload(
         label="📥 Baixar Postos Utilizados",
         filename="postos_utilizados.csv",
-        callback=lambda: io.BytesIO(b""),
+        callback=lambda: io.BytesIO(b""),  # dummy inicial
         button_type="success",
         visible=False,
         width=200
     )
 
+    # Função auxiliar segura para agregação de postos usados
     def agrupar_postos(df_postos, periodo):
         df_postos = df_postos.copy()
         df_postos["data"] = pd.to_datetime(df_postos["data"])
         df_postos["periodo"] = df_postos["data"].dt.to_period(periodo)
 
         colunas_ids = [col for col in df_postos.columns if col not in ["data", "periodo"]]
+
         df_agg = {"data": df_postos.groupby("periodo")["data"].min()}
 
         for col in colunas_ids:
@@ -186,46 +191,26 @@ def painel_busca_multiplos_pontos():
         df_postos_agregado.columns = ["data"] + colunas_ids
         return df_postos_agregado.reset_index(drop=True)
 
-    import asyncio
-
-    async def buscar_async(event=None):
-        def update_progress(value, color='primary'):
-            progresso.value = value
-            progresso.bar_color = color
-
-        update_progress(5, 'primary')
+    def buscar(event=None):
+        spinner.value = True
         resultado_nome.object = "⏳ Carregando..."
         tabela_resultado.value = pd.DataFrame()
         tabela_postos.value = pd.DataFrame()
         btn_download_serie.visible = False
         btn_download_postos.visible = False
-        await asyncio.sleep(0.1)
 
         try:
             texto = input_coords.value
-            n_postos = int(limite.value) if limite.value.isdigit() else 100
+            n_postos = int(limite.value) if limite.value.isdigit() else 10
             di = data_inicio.value
             df = data_fim.value
             gran = granularidade.value
 
             if not texto or not di or not df:
                 resultado_nome.object = "⚠️ Preencha todas as informações."
-                update_progress(100, 'danger')
                 return
 
-            update_progress(20, 'info')
-            await asyncio.sleep(0.1)
-
-            def progresso_callback(v):
-                update_progress(v, 'warning')
-                pn.state.curdoc.add_next_tick_callback(lambda: None)
-
-            df_result, df_postos_usados = buscar_series_para_multiplos_pontos(
-                texto, di, df, n_postos, progresso_callback=progresso_callback
-            )
-
-            update_progress(80, 'warning')
-            await asyncio.sleep(0.1)
+            df_result, df_postos_usados = buscar_series_para_multiplos_pontos(texto, di, df, n_postos)
 
             if not df_result.empty:
                 df_result["data"] = pd.to_datetime(df_result["data"])
@@ -241,12 +226,11 @@ def painel_busca_multiplos_pontos():
                     df_result["data"] = df_result["data"].dt.to_timestamp()
                     df_postos_usados = agrupar_postos(df_postos_usados, "Y")
 
-                update_progress(90, 'success')
-                await asyncio.sleep(0.1)
+                # Formatar datas
+                df_result["data"] = df_result["data"].dt.strftime("%Y-%m-%d")
+                df_postos_usados["data"] = df_postos_usados["data"].dt.strftime("%Y-%m-%d")
 
-                df_result["data"] = df_result["data"].dt.strftime("%d-%m-%Y")
-                df_postos_usados["data"] = df_postos_usados["data"].dt.strftime("%d-%m-%Y")
-
+                # Atualizar tabelas
                 tabela_resultado.value = df_result
                 tabela_postos.value = df_postos_usados
                 resultado_nome.object = f"**✅ Série {gran} gerada com sucesso.**"
@@ -257,6 +241,7 @@ def painel_busca_multiplos_pontos():
                 df_result.to_csv(f"temp/{nome_serie}", index=False, sep=";")
                 df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")
 
+                # Atualizar botões de download com callbacks corretos
                 btn_download_serie.callback = lambda: io.BytesIO(open(f"temp/{nome_serie}", "rb").read())
                 btn_download_serie.filename = nome_serie
                 btn_download_postos.callback = lambda: io.BytesIO(open("temp/postos_utilizados.csv", "rb").read())
@@ -265,107 +250,26 @@ def painel_busca_multiplos_pontos():
                 btn_download_postos.visible = True
             else:
                 resultado_nome.object = "⚠️ Nenhum dado encontrado."
-                update_progress(100, 'warning')
 
         except Exception as e:
             resultado_nome.object = f"❌ Erro: {e}"
-            update_progress(100, 'danger')
 
         finally:
-            update_progress(100, 'success')
+            spinner.value = False
 
-    buscar_btn.on_click(lambda event: asyncio.ensure_future(buscar_async(event)))
-
-    def gerar_mapa_interativo():
-        m = folium.Map(location=[-5.4984, -39.3206], zoom_start=7, width='50%', height='450px')
-
-        for _, row in posto.iterrows():
-            lat = row['Latitude']
-            lon = row['Longitude']
-            nome = row['nome_posto']
-            id_posto = row['id_posto']
-            info_html = f"""
-            <div style="text-align:center;">
-                <b>{nome}</b><br>
-                ID: {id_posto}<br>
-                Latitude: {lat:.6f}<br>
-                Longitude: {lon:.6f}<br>
-                <button style="margin-top:8px;" onclick="navigator.clipboard.writeText('{id_posto},{lat:.6f},{lon:.6f}')">🔗</button>
-            </div>
-            """
-            folium.Marker(
-                location=[lat, lon],
-                icon=BeautifyIcon(
-                    icon_shape='marker',
-                    border_color='#1976d2',
-                    text_color='white',
-                    background_color='#1976d2',
-                    number=id_posto,
-                ),
-                popup=folium.Popup(info_html, max_width=250),
-                tooltip=f"{nome} (ID: {id_posto})",
-            ).add_to(m)
-
-        MousePosition().add_to(m)
-
-        from folium import MacroElement
-        from jinja2 import Template
-
-        class ClickPopup(MacroElement):
-            _template = Template("""
-                {% macro script(this, kwargs) %}
-                if (!window.clickPopupIdCounter) {
-                    window.clickPopupIdCounter = 1;
-                }
-                function onMapClick(e) {
-                    var lat = e.latlng.lat.toFixed(6);
-                    var lon = e.latlng.lng.toFixed(6);
-                    var id = window.clickPopupIdCounter++;
-                    var popupContent = `
-                    <div style="text-align:center;">
-                        <b>Latitude:</b> ${lat}<br>
-                        <b>Longitude:</b> ${lon}<br><br>
-                        <button onclick="navigator.clipboard.writeText('${id},' + ${lat} + ',' + ${lon})">🔗</button>
-                    </div>
-                    `;
-                    var popup = L.popup()
-                        .setLatLng(e.latlng)
-                        .setContent(popupContent)
-                        .openOn({{this._parent.get_name()}});
-                }
-                {{this._parent.get_name()}}.on('click', onMapClick);
-                {% endmacro %}
-            """)
-
-        m.add_child(ClickPopup())
-        return pn.pane.HTML(m._repr_html_(), height=450, sizing_mode='stretch_width')
+    buscar_btn.on_click(buscar)
 
     return pn.Column(
-        pn.pane.Markdown("## 🔍 Buscar série para múltiplos pontos"),
-        pn.Row(
-            pn.Column(
-                input_coords,
-                pn.Row(data_inicio, data_fim),
-                granularidade,
-                pn.Row(buscar_btn, progresso),
-                sizing_mode="stretch_width",
-                width=400,
-            ),
-            pn.Column(
-                pn.pane.Markdown("### 🗺️ Mapa interativo com cópia de coordenadas"),
-                gerar_mapa_interativo(),
-                sizing_mode="stretch_width",
-            ),
-            sizing_mode="stretch_width",
-        ),
+        "# Buscar série para múltiplos pontos",
+        pn.Row(input_coords, limite, data_inicio, data_fim, granularidade, buscar_btn, spinner),
         resultado_nome,
-        pn.Row(btn_download_serie, btn_download_postos, sizing_mode="stretch_width"),
+        pn.Row(btn_download_serie, btn_download_postos),
         pn.Tabs(
             ("📊 Série", tabela_resultado),
             ("📌 Postos utilizados", tabela_postos),
-        ),
-        sizing_mode="stretch_width",
+        )
     )
+
 
 # Carregamento dos dados
 municipio = load_municipio()
@@ -384,6 +288,12 @@ supabase: Client = create_client(url, key)
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+
+
+
+
+
 
 
 def view_mapa():
