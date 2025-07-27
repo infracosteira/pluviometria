@@ -1,25 +1,29 @@
-import panel as pn
-from .df_import import load_municipio, load_posto, load_registro, load_diario
-from fastapi import FastAPI
-from panel.io.fastapi import add_applications
-import folium
-import pandas as pd
-from folium.plugins import MousePosition
-from folium.plugins import BeautifyIcon
-from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
-from supabase import create_client, Client
 import os
 import io
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import select, func
+
+import pandas as pd
+import panel as pn
+import folium
+from folium.plugins import MousePosition, BeautifyIcon
+from folium import MacroElement
+from jinja2 import Template
 from shapely.geometry import Point
-from geoalchemy2.shape import from_shape
-from sqlalchemy import Column, Integer, Float, String
-from geoalchemy2 import Geometry
+
+from fastapi import FastAPI, Query
+from fastapi.responses import FileResponse
+from panel.io.fastapi import add_applications
+
+from sqlalchemy import (
+    create_engine, select, func, Column, Integer, Float, String, MetaData, Table
+)
+from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import MetaData, Table
+from geoalchemy2 import Geometry
+from geoalchemy2.shape import from_shape
+
+from supabase import create_client, Client
+
+from .df_import import load_municipio, load_posto, load_registro, load_diario
 
 Base = declarative_base()
 
@@ -114,7 +118,6 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         df_resultado[ponto['id']] = valores
         df_postos_usados[ponto['id']] = postos_usados
 
-        # Atualiza progresso se callback fornecido
         if progresso_callback is not None:
             progresso_callback(int(20 + 60 * (idx + 1) / total_pontos))
 
@@ -232,14 +235,20 @@ def painel_busca_multiplos_pontos():
                 df_postos_usados["data"] = pd.to_datetime(df_postos_usados["data"])
 
                 if gran == "mensal":
-                    df_result = df_result.groupby(df_result["data"].dt.to_period("M")).sum(numeric_only=True).reset_index()
+                    df_result = df_result.groupby(df_result["data"].dt.to_period("M")).sum(numeric_only=True).round(1).reset_index()
                     df_result["data"] = df_result["data"].dt.to_timestamp()
                     df_postos_usados = agrupar_postos(df_postos_usados, "M")
+                    for col in df_postos_usados.columns:
+                        if col != "data":
+                            df_postos_usados[col] = df_postos_usados[col].astype("Int64")
 
                 elif gran == "anual":
-                    df_result = df_result.groupby(df_result["data"].dt.to_period("Y")).sum(numeric_only=True).reset_index()
+                    df_result = df_result.groupby(df_result["data"].dt.to_period("Y")).sum(numeric_only=True).round(1).reset_index()
                     df_result["data"] = df_result["data"].dt.to_timestamp()
                     df_postos_usados = agrupar_postos(df_postos_usados, "Y")
+                    for col in df_postos_usados.columns:
+                        if col != "data":
+                            df_postos_usados[col] = df_postos_usados[col].astype("Int64")
 
                 update_progress(90, 'success')
                 await asyncio.sleep(0.1)
@@ -308,9 +317,6 @@ def painel_busca_multiplos_pontos():
 
         MousePosition().add_to(m)
 
-        from folium import MacroElement
-        from jinja2 import Template
-
         class ClickPopup(MacroElement):
             _template = Template("""
                 {% macro script(this, kwargs) %}
@@ -349,10 +355,9 @@ def painel_busca_multiplos_pontos():
                 granularidade,
                 pn.Row(buscar_btn, progresso),
                 sizing_mode="stretch_width",
-                width=400,
             ),
             pn.Column(
-                pn.pane.Markdown("### 🗺️ Mapa interativo com cópia de coordenadas"),
+                pn.pane.Markdown("### 🗺️ Mapa 🗺️"),
                 gerar_mapa_interativo(),
                 sizing_mode="stretch_width",
             ),
@@ -360,10 +365,6 @@ def painel_busca_multiplos_pontos():
         ),
         resultado_nome,
         pn.Row(btn_download_serie, btn_download_postos, sizing_mode="stretch_width"),
-        pn.Tabs(
-            ("📊 Série", tabela_resultado),
-            ("📌 Postos utilizados", tabela_postos),
-        ),
         sizing_mode="stretch_width",
     )
 
