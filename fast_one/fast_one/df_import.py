@@ -3,7 +3,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import re
-from fast_one.db_conection import reg, engine
+from db_conection import reg, engine
 
 
 load_dotenv()
