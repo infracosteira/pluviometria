@@ -76,6 +76,24 @@ tornado = {version = ">=6.2", markers = "sys_platform != \"emscripten\""}
 xyzservices = ">=2021.09.1"
 
 [[package]]
+name = "bokeh-fastapi"
+version = "0.1.4"
+description = "Compatibility layer between Bokeh and FastAPI"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "bokeh_fastapi-0.1.4-py3-none-any.whl", hash = "sha256:b6481c9ddc521a211b3da89cfeda2b38e50c8bba6c09d55157ab3d8f3121154d"},
+    {file = "bokeh_fastapi-0.1.4.tar.gz", hash = "sha256:c2aeab4baf735839e744fb22ce9856c258e186919447e546dba59af628eb603c"},
+]
+
+[package.dependencies]
+bokeh = ">=2.3.3"
+fastapi = ">=0.68.0"
+starlette = "*"
+websockets = ">=10.4"
+
+[[package]]
 name = "branca"
 version = "0.8.1"
 description = "Generate complex HTML+JS pages with Python"
@@ -2641,4 +2659,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "01ce5f310e64c1d88e8f85fff678bd584b641cf460df6159a66abff5c5da219b"
+content-hash = "eb47ab80838eb5c6dd5452977b183f063d18d5d6a1436811073651737386d6bd"
