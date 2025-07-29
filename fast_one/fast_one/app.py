@@ -36,7 +36,8 @@ class Posto(Base):
     precipitacao_media_anual = Column(Float)
     coordenadas = Column(Geometry(geometry_type="POINT", srid=4326))
 
-DATABASE_URL = f"postgresql://postgres:344gwd5W1MDwZ9up@db.hqnkhorlbswlklcfvoob.supabase.co:6543/postgres"
+DATABASE_URL = f"postgresql://postgres:344gwd5W1MDwZ9up@db.hqnkhorlbswlklcfvoob.supabase.co:5432 /postgres"
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 pn.extension()
 
