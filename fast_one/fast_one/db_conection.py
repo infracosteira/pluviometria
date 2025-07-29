@@ -5,15 +5,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
+USER = os.getenv("DB_USER")
+PASSWORD = os.getenv("DB_PASSWORD")
+HOST = os.getenv("DB_HOST")
+PORT = os.getenv("DB_PORT")
+DBNAME = os.getenv("DB_NAME")
 
-DATABASE_URL = f"postgresql://postgres:344gwd5W1MDwZ9up@db.hqnkhorlbswlklcfvoob.supabase.co:5432/postgres"
+DATABASE_URL = f"postgresql://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}"
 
-# Criando o motor de conexão
-engine = create_engine(DATABASE_URL, pool_size=20, max_overflow=30)
+engine = create_engine(DATABASE_URL)
 
-# Criando a sessão
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Registry para a ORM
 reg = registry()
+
+print("✅ Conexão com o banco de dados (via Pooler) configurada com sucesso!")

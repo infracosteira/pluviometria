@@ -14,15 +14,17 @@ from fastapi.responses import FileResponse
 from panel.io.fastapi import add_applications
 
 from sqlalchemy import (
-    create_engine, select, func, Column, Integer, Float, String, MetaData, Table
+    select, func, Column, Integer, Float, String, MetaData, Table
 )
-from sqlalchemy.orm import sessionmaker, declarative_base
+
+#from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.ext.declarative import declarative_base
 from geoalchemy2 import Geometry
 from geoalchemy2.shape import from_shape
 
 from supabase import create_client, Client
 
+from fast_one.db_conection import SessionLocal, engine
 from .df_import import load_municipio, load_posto, load_registro, load_diario
 
 Base = declarative_base()
@@ -36,15 +38,14 @@ class Posto(Base):
     precipitacao_media_anual = Column(Float)
     coordenadas = Column(Geometry(geometry_type="POINT", srid=4326))
 
-DATABASE_URL = f"postgresql://postgres:344gwd5W1MDwZ9up@db.hqnkhorlbswlklcfvoob.supabase.co:5432 /postgres"
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 pn.extension()
-
 app = FastAPI()
 
 def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_postos=10, progresso_callback=None):
     session = SessionLocal()
+
 
     # Processar entrada
     linhas = [linha.strip() for linha in entrada_texto.strip().splitlines() if linha.strip()]
@@ -382,10 +383,6 @@ app = FastAPI()
 url = os.getenv("SUPABASE_URL")
 key = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(url, key)
-
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
 # Adicionando ao aplicativo
 add_applications(
