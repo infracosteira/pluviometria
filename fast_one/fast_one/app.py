@@ -24,7 +24,7 @@ from geoalchemy2.shape import from_shape
 
 from supabase import create_client, Client
 
-from db_conection import SessionLocal, engine
+from .db_conection import SessionLocal, engine
 from .df_import import load_municipio, load_posto, load_registro, load_diario
 
 Base = declarative_base()
