@@ -132,7 +132,7 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 def painel_busca_multiplos_pontos():
     input_coords = pn.widgets.TextAreaInput(
         name="Coordenadas (id,lat,lon)", 
-        placeholder="id1,-34.91,-8.13\nid2,-34.85,-8.10", 
+        placeholder="id1,-4.023179,-39.836255\nid2,-2.907382,-40.042364", 
         width=400, 
         height=150
     )
