@@ -156,9 +156,9 @@ def painel_busca_multiplos_pontos():
         width=400, 
         height=150
     )
-    limite = pn.widgets.TextInput(name="LIMITE", placeholder="10")
+    #limite = pn.widgets.TextInput(name="LIMITE", placeholder="10")
     data_inicio = pn.widgets.DatePicker(name="Data início", value=pd.Timestamp("1974-01-01"))
-    data_fim = pn.widgets.DatePicker(name="Data fim", value=pd.Timestamp("2025-01-01"))
+    data_fim = pn.widgets.DatePicker(name="Data fim", value=pd.Timestamp("2024-12-31"))
 
     granularidade = pn.widgets.RadioButtonGroup(
         name="Granularidade",
@@ -171,10 +171,8 @@ def painel_busca_multiplos_pontos():
     buscar_btn = pn.widgets.Button(name="Buscar série", button_type="primary", width=260)
     resultado_nome = pn.pane.Markdown("", width=600)
 
-    progresso = pn.indicators.Progress(name='Progresso', value=0, width=260, bar_color='primary')
-
-    # Spinner de loading
-    spinner = pn.indicators.LoadingSpinner(value=False, width=40, height=40, color="primary")
+    progresso = pn.indicators.Progress(name='Progresso', value=0, width=260, bar_color='primary', visible=False)
+    spinner = pn.indicators.LoadingSpinner(value=False, width=40, height=40, color="primary", visible=False)
 
     tabela_resultado = pn.widgets.Tabulator(pd.DataFrame(), width=800, height=400, pagination='local', page_size=1000)
     tabela_postos = pn.widgets.Tabulator(pd.DataFrame(), width=800, height=400, pagination='local', page_size=1000)
@@ -220,8 +218,11 @@ def painel_busca_multiplos_pontos():
         def update_progress(value, color='primary'):
             progresso.value = value
             progresso.bar_color = color
-            # Mostra o spinner enquanto a barra não está cheia
             spinner.value = value < 100
+
+        # Torna barra e spinner visíveis ao iniciar busca
+        progresso.visible = True
+        spinner.visible = True
 
         update_progress(5, 'primary')
         resultado_nome.object = "⏳ Carregando..."
@@ -234,7 +235,14 @@ def painel_busca_multiplos_pontos():
 
         try:
             texto = input_coords.value
-            n_postos = int(limite.value) if limite.value.isdigit() else 74
+
+            # Verificação do padrão da primeira linha
+            linhas = [linha.strip() for linha in texto.strip().splitlines() if linha.strip()]
+            if not linhas or len(linhas[0].split(",")) != 3:
+                resultado_nome.object = "⚠️ Ponha coordenadas válidas (id,lat,lon)."
+                update_progress(100, 'danger')
+                return
+            n_postos = 74
             di = data_inicio.value
             df = data_fim.value
             gran = granularidade.value
@@ -310,6 +318,94 @@ def painel_busca_multiplos_pontos():
         finally:
             update_progress(100, 'success')
             spinner.value = False  # Esconde o spinner quando termina
+            # Esconde barra e spinner após término
+            progresso.visible = False
+            spinner.visible = False
+
+    buscar_btn.on_click(lambda event: asyncio.ensure_future(buscar_async(event)))
+
+    def gerar_mapa_interativo():
+        m = folium.Map(location=[-5.4984, -39.3206], zoom_start=7, width='50%', height='450px')
+
+        for _, row in posto.iterrows():
+            lat = row['Latitude']
+            lon = row['Longitude']
+            nome = row['nome_posto']
+            id_posto = row['id_posto']
+            info_html = f"""
+            <div style="text-align:center;">
+                <b>{nome}</b><br>
+                ID: {id_posto}<br>
+                Latitude: {lat:.6f}<br>
+                Longitude: {lon:.6f}<br>
+                <button style="margin-top:8px;" onclick="navigator.clipboard.writeText('{id_posto},{lat:.6f},{lon:.6f}')">🔗</button>
+            </div>
+            """
+            folium.Marker(
+                location=[lat, lon],
+                icon=BeautifyIcon(
+                    icon_shape='marker',
+                    border_color='#1976d2',
+                    text_color='white',
+                    background_color='#1976d2',
+                    number=id_posto,
+                ),
+                popup=folium.Popup(info_html, max_width=250),
+                tooltip=f"{nome} (ID: {id_posto})",
+            ).add_to(m)
+
+        MousePosition().add_to(m)
+
+        class ClickPopup(MacroElement):
+            _template = Template("""
+                {% macro script(this, kwargs) %}
+                if (!window.clickPopupIdCounter) {
+                    window.clickPopupIdCounter = 1;
+                }
+                function onMapClick(e) {
+                    var lat = e.latlng.lat.toFixed(6);
+                    var lon = e.latlng.lng.toFixed(6);
+                    var id = window.clickPopupIdCounter++;
+                    var popupContent = `
+                    <div style="text-align:center;">
+                        <b>Latitude:</b> ${lat}<br>
+                        <b>Longitude:</b> ${lon}<br><br>
+                        <button onclick="navigator.clipboard.writeText('${id},' + ${lat} + ',' + ${lon})">🔗</button>
+                    </div>
+                    `;
+                    var popup = L.popup()
+                        .setLatLng(e.latlng)
+                        .setContent(popupContent)
+                        .openOn({{this._parent.get_name()}});
+                }
+                {{this._parent.get_name()}}.on('click', onMapClick);
+                {% endmacro %}
+            """)
+
+        m.add_child(ClickPopup())
+        return pn.pane.HTML(m._repr_html_(), height=450, sizing_mode='stretch_width')
+
+    return pn.Column(
+        pn.pane.Markdown("## 🔍 Buscar série para múltiplos pontos"),
+        pn.Row(
+            pn.Column(
+                input_coords,
+                pn.Row(data_inicio, data_fim),
+                granularidade,
+                pn.Row(buscar_btn, progresso, spinner),
+                sizing_mode="stretch_width",
+            ),
+            pn.Column(
+                pn.pane.Markdown("### 🗺️ Mapa 🗺️"),
+                gerar_mapa_interativo(),
+                sizing_mode="stretch_width",
+            ),
+            sizing_mode="stretch_width",
+        ),
+        resultado_nome,
+        pn.Row(btn_download_serie, btn_download_postos, sizing_mode="stretch_width"),
+        sizing_mode="stretch_width",
+    )
 
     buscar_btn.on_click(lambda event: asyncio.ensure_future(buscar_async(event)))
 
