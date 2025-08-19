@@ -297,7 +297,6 @@ def painel_busca_multiplos_pontos():
                 btn_download_serie.callback = lambda: io.BytesIO(open(f"temp/{nome_serie}", "rb").read())
                 btn_download_serie.filename = nome_serie
                 btn_download_postos.callback = lambda: io.BytesIO(open("temp/postos_utilizados.csv", "rb").read())
-
                 btn_download_serie.visible = True
                 btn_download_postos.visible = True
             else:
