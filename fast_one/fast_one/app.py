@@ -46,7 +46,6 @@ app = FastAPI()
 def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_postos=10, progresso_callback=None):
     session = SessionLocal()
 
-
     # Processar entrada
     linhas = [linha.strip() for linha in entrada_texto.strip().splitlines() if linha.strip()]
     pontos = []
@@ -68,7 +67,15 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
     total_pontos = len(pontos)
     for idx, ponto in enumerate(pontos):
+        # Progresso: início do ponto
+        if progresso_callback is not None:
+            progresso_callback(int(10 + 70 * (idx + 0.0) / total_pontos))
+
         ponto_geom = from_shape(Point(ponto['lat'], ponto['lon']), srid=4326)
+
+        # Progresso: após criar geometria
+        if progresso_callback is not None:
+            progresso_callback(int(10 + 70 * (idx + 0.2) / total_pontos))
 
         stmt_postos = (
             select(
@@ -82,6 +89,10 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         )
         postos_proximos = session.execute(stmt_postos).fetchall()
         ids_postos = [p[0] for p in postos_proximos]
+
+        # Progresso: após buscar postos próximos
+        if progresso_callback is not None:
+            progresso_callback(int(10 + 70 * (idx + 0.4) / total_pontos))
 
         stmt_registros = (
             select(
@@ -99,6 +110,10 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         df = pd.DataFrame(registros, columns=["id_posto", "data", "valor"])
         df_pivot = df.pivot(index="data", columns="id_posto", values="valor")
         df_pivot = df_pivot.reindex(datas)
+
+        # Progresso: após pivotar dataframe
+        if progresso_callback is not None:
+            progresso_callback(int(10 + 70 * (idx + 0.6) / total_pontos))
 
         valores = []
         postos_usados = []
@@ -120,8 +135,13 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         df_resultado[ponto['id']] = valores
         df_postos_usados[ponto['id']] = postos_usados
 
+        # Progresso: após processar valores
         if progresso_callback is not None:
-            progresso_callback(int(20 + 60 * (idx + 1) / total_pontos))
+            progresso_callback(int(10 + 70 * (idx + 0.8) / total_pontos))
+
+        # Progresso: fim do ponto
+        if progresso_callback is not None:
+            progresso_callback(int(10 + 70 * (idx + 1.0) / total_pontos))
 
     session.close()
     os.makedirs("temp", exist_ok=True)
@@ -152,6 +172,9 @@ def painel_busca_multiplos_pontos():
     resultado_nome = pn.pane.Markdown("", width=600)
 
     progresso = pn.indicators.Progress(name='Progresso', value=0, width=260, bar_color='primary')
+
+    # Spinner de loading
+    spinner = pn.indicators.LoadingSpinner(value=False, width=40, height=40, color="primary")
 
     tabela_resultado = pn.widgets.Tabulator(pd.DataFrame(), width=800, height=400, pagination='local', page_size=1000)
     tabela_postos = pn.widgets.Tabulator(pd.DataFrame(), width=800, height=400, pagination='local', page_size=1000)
@@ -197,6 +220,8 @@ def painel_busca_multiplos_pontos():
         def update_progress(value, color='primary'):
             progresso.value = value
             progresso.bar_color = color
+            # Mostra o spinner enquanto a barra não está cheia
+            spinner.value = value < 100
 
         update_progress(5, 'primary')
         resultado_nome.object = "⏳ Carregando..."
@@ -204,6 +229,7 @@ def painel_busca_multiplos_pontos():
         tabela_postos.value = pd.DataFrame()
         btn_download_serie.visible = False
         btn_download_postos.visible = False
+        spinner.value = True
         await asyncio.sleep(0.1)
 
         try:
@@ -218,7 +244,7 @@ def painel_busca_multiplos_pontos():
                 update_progress(100, 'danger')
                 return
 
-            update_progress(20, 'info')
+            update_progress(10, 'info')
             await asyncio.sleep(0.1)
 
             def progresso_callback(v):
@@ -229,7 +255,7 @@ def painel_busca_multiplos_pontos():
                 texto, di, df, n_postos, progresso_callback=progresso_callback
             )
 
-            update_progress(80, 'warning')
+            update_progress(85, 'warning')
             await asyncio.sleep(0.1)
 
             if not df_result.empty:
@@ -252,7 +278,7 @@ def painel_busca_multiplos_pontos():
                         if col != "data":
                             df_postos_usados[col] = df_postos_usados[col].astype("Int64")
 
-                update_progress(90, 'success')
+                update_progress(95, 'success')
                 await asyncio.sleep(0.1)
 
                 df_result["data"] = df_result["data"].dt.strftime("%d-%m-%Y")
@@ -265,8 +291,8 @@ def painel_busca_multiplos_pontos():
                 os.makedirs("temp", exist_ok=True)
 
                 nome_serie = f"serie_{gran}_multipontos.csv"
-                df_result.to_csv(f"temp/{nome_serie}", index=False, sep=";")
-                df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")
+                df_result.to_csv(f"temp/{nome_serie}", index=False, sep=";", decimal=",")
+                df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";", decimal=",")
 
                 btn_download_serie.callback = lambda: io.BytesIO(open(f"temp/{nome_serie}", "rb").read())
                 btn_download_serie.filename = nome_serie
@@ -284,6 +310,7 @@ def painel_busca_multiplos_pontos():
 
         finally:
             update_progress(100, 'success')
+            spinner.value = False  # Esconde o spinner quando termina
 
     buscar_btn.on_click(lambda event: asyncio.ensure_future(buscar_async(event)))
 
@@ -355,7 +382,7 @@ def painel_busca_multiplos_pontos():
                 input_coords,
                 pn.Row(data_inicio, data_fim),
                 granularidade,
-                pn.Row(buscar_btn, progresso),
+                pn.Row(buscar_btn, progresso, spinner),
                 sizing_mode="stretch_width",
             ),
             pn.Column(
@@ -387,7 +414,7 @@ supabase: Client = create_client(url, key)
 # Adicionando ao aplicativo
 add_applications(
     {
-        '/': painel_busca_multiplos_pontos(),
+        '/': painel_busca_multiplos_pontos,
     },
     app=app,
 )
