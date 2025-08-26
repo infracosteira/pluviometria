@@ -498,7 +498,6 @@ url = os.getenv("SUPABASE_URL")
 key = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(url, key)
 
-# Adicionando ao aplicativo
 add_applications(
     {
         '/': painel_busca_multiplos_pontos,
