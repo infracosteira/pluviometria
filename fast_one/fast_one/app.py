@@ -53,9 +53,9 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         if len(partes) != 3:
             continue
         id_ponto = partes[0].strip()
-        lat = float(partes[1].strip())
-        lon = float(partes[2].strip())
-        pontos.append({'id': id_ponto, 'lat': lat, 'lon': lon})
+        lon = float(partes[1].strip())
+        lat = float(partes[2].strip())
+        pontos.append({'id': id_ponto, 'lon': lon, 'lat': lat})
 
     datas = pd.date_range(data_inicio, data_fim, freq="D")
     df_resultado = pd.DataFrame({'data': datas})
@@ -64,58 +64,53 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
     metadata = MetaData()
     registro_diario = Table("registro-diario", metadata, autoload_with=engine)
 
-    # Pré-carregar todos os postos em memória para evitar múltiplas queries
-    postos_query = session.query(
-        Posto.id_posto,
-        Posto.nome_posto,
-        func.ST_X(Posto.coordenadas).label("lon"),
-        func.ST_Y(Posto.coordenadas).label("lat")
-    ).filter(Posto.coordenadas != None)
-    postos_df = pd.DataFrame(postos_query.all(), columns=["id_posto", "nome_posto", "lon", "lat"])
-
-    # Pré-carregar todos os registros necessários de uma vez só
-    ids_postos_todos = set()
-    for ponto in pontos:
-        # Encontrar os n_postos mais próximos usando cálculo vetorizado
-        dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
-        postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index]
-        ids_postos_todos.update(postos_proximos["id_posto"].tolist())
-    ids_postos_todos = list(ids_postos_todos)
-
-    stmt_registros = (
-        select(
-            registro_diario.c.id_posto,
-            registro_diario.c.data,
-            registro_diario.c.valor
-        )
-        .where(
-            registro_diario.c.id_posto.in_(ids_postos_todos),
-            registro_diario.c.data >= data_inicio,
-            registro_diario.c.data <= data_fim
-        )
-    )
-    registros = session.execute(stmt_registros).fetchall()
-    df_registros = pd.DataFrame(registros, columns=["id_posto", "data", "valor"])
-    df_registros["data"] = pd.to_datetime(df_registros["data"])
-
     total_pontos = len(pontos)
     for idx, ponto in enumerate(pontos):
+        # Progresso: início do ponto
         if progresso_callback is not None:
             progresso_callback(int(10 + 70 * (idx + 0.0) / total_pontos))
 
-        # Encontrar os n_postos mais próximos usando cálculo vetorizado
-        dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
-        postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index]
-        ids_postos = postos_proximos["id_posto"].tolist()
+        ponto_geom = from_shape(Point(ponto['lat'], ponto['lon']), srid=4326)
 
+        # Progresso: após criar geometria
         if progresso_callback is not None:
             progresso_callback(int(10 + 70 * (idx + 0.2) / total_pontos))
 
-        # Filtrar registros já carregados
-        df = df_registros[df_registros["id_posto"].isin(ids_postos)]
+        stmt_postos = (
+            select(
+                Posto.id_posto,
+                Posto.nome_posto,
+                func.ST_Distance(Posto.coordenadas, ponto_geom).label("distancia")
+            )
+            .where(Posto.coordenadas != None)
+            .order_by(Posto.coordenadas.op('<->')(ponto_geom))
+            .limit(n_postos)
+        )
+        postos_proximos = session.execute(stmt_postos).fetchall()
+        ids_postos = [p[0] for p in postos_proximos]
+
+        # Progresso: após buscar postos próximos
+        if progresso_callback is not None:
+            progresso_callback(int(10 + 70 * (idx + 0.4) / total_pontos))
+
+        stmt_registros = (
+            select(
+                registro_diario.c.id_posto,
+                registro_diario.c.data,
+                registro_diario.c.valor
+            )
+            .where(
+                registro_diario.c.id_posto.in_(ids_postos), 
+                registro_diario.c.data >= data_inicio,
+                registro_diario.c.data <= data_fim
+            )
+        )
+        registros = session.execute(stmt_registros).fetchall()
+        df = pd.DataFrame(registros, columns=["id_posto", "data", "valor"])
         df_pivot = df.pivot(index="data", columns="id_posto", values="valor")
         df_pivot = df_pivot.reindex(datas)
 
+        # Progresso: após pivotar dataframe
         if progresso_callback is not None:
             progresso_callback(int(10 + 70 * (idx + 0.6) / total_pontos))
 
@@ -139,8 +134,11 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         df_resultado[ponto['id']] = valores
         df_postos_usados[ponto['id']] = postos_usados
 
+        # Progresso: após processar valores
         if progresso_callback is not None:
             progresso_callback(int(10 + 70 * (idx + 0.8) / total_pontos))
+
+        # Progresso: fim do ponto
         if progresso_callback is not None:
             progresso_callback(int(10 + 70 * (idx + 1.0) / total_pontos))
 
@@ -222,7 +220,7 @@ def painel_busca_multiplos_pontos():
             spinner.value = value < 100
 
         # Torna barra e spinner visíveis ao iniciar busca
-        progresso.visible = True
+        progresso.visible = False
         spinner.visible = True
 
         update_progress(5, 'primary')
