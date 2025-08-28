@@ -1,5 +1,8 @@
 import os
 import io
+import logging
+import sys
+import time
 
 import pandas as pd
 import panel as pn
@@ -14,8 +17,9 @@ from fastapi.responses import FileResponse
 from panel.io.fastapi import add_applications
 
 from sqlalchemy import (
-    select, func, Column, Integer, Float, String, MetaData, Table
+    select, func, Column, Integer, Float, String, MetaData, Table, event
 )
+from sqlalchemy.engine import Engine
 
 from sqlalchemy.ext.declarative import declarative_base
 from geoalchemy2 import Geometry
@@ -25,6 +29,39 @@ from supabase import create_client, Client
 
 from .db_conection import SessionLocal, engine
 from .df_import import load_municipio, load_posto, load_registro, load_diario
+from .timer import Timer
+
+### Criando um logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Criando um handler e configurando um formato
+handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+
+# Adicionando o handler ao logger
+logger.addHandler(handler)
+###
+
+### --- SETUP EVENT LISTENERS ---
+# We attach the start time to the connection object itself to avoid global state issues
+@event.listens_for(Engine, "before_cursor_execute")
+def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    """Listener function called before a query is executed."""
+    conn.info.setdefault('query_start_time', []).append(time.perf_counter())
+
+@event.listens_for(Engine, "after_cursor_execute")
+def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    # If the query is a reflection query against the system catalog, just ignore it.
+    if "pg_catalog" in statement or "pg_get_indexdef" in statement:
+        # We still need to pop the time to keep the stack clean, but we don't print.
+        conn.info['query_start_time'].pop(-1)
+        return
+
+    total = time.perf_counter() - conn.info['query_start_time'].pop(-1)
+    
+    print(f"DB Query Time: {total:.4f} seconds | Statement: {statement}\n")
 
 Base = declarative_base()
 
@@ -43,101 +80,133 @@ pn.extension()
 app = FastAPI()
 
 def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_postos=10, progresso_callback=None):
+    logger.info("Iniciando a busca de séries temporais para múltiplos pontos.")
+    total_start_time = time.perf_counter()
+
     session = SessionLocal()
 
     # Processar entrada
-    linhas = [linha.strip() for linha in entrada_texto.strip().splitlines() if linha.strip()]
-    pontos = []
-    for linha in linhas:
-        partes = linha.split(",")
-        if len(partes) != 3:
-            continue
-        id_ponto = partes[0].strip()
-        lat = float(partes[1].strip())
-        lon = float(partes[2].strip())
-        pontos.append({'id': id_ponto, 'lat': lat, 'lon': lon})
+    
+    logger.info("Processando entrada...")
+    with Timer("PROCESSANDO ENTRADA", logger=logger):
+        linhas = [linha.strip() for linha in entrada_texto.strip().splitlines()]
+        pontos = []
+        for linha in linhas:
+            partes = linha.split(",")
+            if len(partes) != 3:
+                continue
+            id_ponto = partes[0].strip()
+            lat = float(partes[1].strip())
+            lon = float(partes[2].strip())
+            pontos.append({'id': id_ponto, 'lat': lat, 'lon': lon})
 
-    datas = pd.date_range(data_inicio, data_fim, freq="D")
-    df_resultado = pd.DataFrame({'data': datas})
-    df_postos_usados = pd.DataFrame({'data': datas})
-
-    metadata = MetaData()
-    registro_diario = Table("registro-diario", metadata, autoload_with=engine)
+        datas = pd.date_range(data_inicio, data_fim, freq="D")
+        df_resultado = pd.DataFrame({'data': datas})
+        df_postos_usados = pd.DataFrame({'data': datas})
+    
+    logger.info("Entrada processada.")
 
     # Pré-carregar todos os postos em memória para evitar múltiplas queries
-    postos_query = session.query(
-        Posto.id_posto,
-        Posto.nome_posto,
-        func.ST_X(Posto.coordenadas).label("lon"),
-        func.ST_Y(Posto.coordenadas).label("lat")
-    ).filter(Posto.coordenadas != None)
+    logger.info("Pré-carregando todos os postos em memória...")
+    
+    with Timer("PRÉ-CARREGAMENTO DE POSTOS", logger=logger):
+        postos_query = session.query(
+            Posto.id_posto,
+            Posto.nome_posto,
+            func.ST_X(Posto.coordenadas).label("lon"),
+            func.ST_Y(Posto.coordenadas).label("lat")
+        ).filter(Posto.coordenadas != None)
 
-    postos_df = pd.DataFrame(postos_query.all(), columns=["id_posto", "nome_posto", "lon", "lat"])
+        #postos_df = pd.DataFrame(postos_query.all(), columns=["id_posto", "nome_posto", "lon", "lat"])
+        postos_df = pd.read_sql(postos_query.statement, session.bind, columns=["id_posto", "nome_posto", "lon", "lat"])
+
+        logger.info("Registros retornados: %d", len(postos_df))
+        
+    logger.info("Todos os postos foram pré-carregados em memória.")
+    
 
     # Pré-carregar todos os registros necessários de uma vez só
-    ids_postos_todos = set()
-    for ponto in pontos:
-        # Encontrar os n_postos mais próximos usando cálculo vetorizado
-        dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
-        postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index]
-        ids_postos_todos.update(postos_proximos["id_posto"].tolist())
-    ids_postos_todos = list(ids_postos_todos)
+    logger.info("Encontrando os n_postos mais próximos usando cálculo vetorizado...")
+    
+    with Timer(f"ENCONTRANDO OS {n_postos} POSTOS MAIS PRÓXIMOS", logger=logger):
+        ids_postos_todos = set()
+        for ponto in pontos:
+            # Encontrar os n_postos mais próximos usando cálculo vetorizado
+            dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
+            postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index]
+            ids_postos_todos.update(postos_proximos["id_posto"].tolist())
+        ids_postos_todos = list(ids_postos_todos)
+    
+    logger.info(ids_postos_todos)
 
-    stmt_registros = (
-        select(
-            registro_diario.c.id_posto,
-            registro_diario.c.data,
-            registro_diario.c.valor
+    with Timer("RECUPERANDO DADOS DOS POSTOS SELECIONADOS", logger=logger):
+        metadata = MetaData()
+        registro_diario = Table("registro-diario", metadata, autoload_with=engine)
+
+        stmt_registros = (
+            select(
+                registro_diario.c.id_posto,
+                registro_diario.c.data,
+                registro_diario.c.valor
+            )
+            .where(
+                registro_diario.c.id_posto.in_(ids_postos_todos),
+                registro_diario.c.data >= data_inicio,
+                registro_diario.c.data <= data_fim
+            )
         )
-        .where(
-            registro_diario.c.id_posto.in_(ids_postos_todos),
-            registro_diario.c.data >= data_inicio,
-            registro_diario.c.data <= data_fim
-        )
-    )
-    registros = session.execute(stmt_registros).fetchall()
-    df_registros = pd.DataFrame(registros, columns=["id_posto", "data", "valor"])
-    df_registros["data"] = pd.to_datetime(df_registros["data"])
+        #registros = session.execute(stmt_registros).fetchall()
+        #df_registros = pd.DataFrame(registros, columns=["id_posto", "data", "valor"])
+        #df_registros["data"] = pd.to_datetime(df_registros["data"])
+        df_registros = pd.read_sql(stmt_registros, session.bind, columns=["id_posto", "data", "valor"], parse_dates=["data"])
 
-    total_pontos = len(pontos)
-    for idx, ponto in enumerate(pontos):
-        if progresso_callback is not None:
-            progresso_callback(int(10 + 70 * (idx + 0.0) / total_pontos))
+        logger.info("Registros retornados: %d", len(df_registros))
 
-        # Encontrar os n_postos mais próximos usando cálculo vetorizado
-        dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
-        postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index]
-        ids_postos = postos_proximos["id_posto"].tolist()
+    with Timer("PÓS-PROCESSAMENTO", logger=logger):
+        total_pontos = len(pontos)
+        for idx, ponto in enumerate(pontos):
+            if progresso_callback is not None:
+                progresso_callback(int(10 + 70 * (idx + 0.0) / total_pontos))
 
-        # Filtrar registros já carregados
-        df = df_registros[df_registros["id_posto"].isin(ids_postos)]
-        df_pivot = df.pivot(index="data", columns="id_posto", values="valor")
-        df_pivot = df_pivot.reindex(datas)
+            # Encontrar os n_postos mais próximos usando cálculo vetorizado
+            dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
+            postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index]
+            ids_postos = postos_proximos["id_posto"].tolist()
 
-        valores = []
-        postos_usados = []
-        for data in df_pivot.index:
-            valor_data = None
-            posto_usado = None
-            for id_posto in ids_postos:
-                try:
-                    valor = df_pivot.loc[data, id_posto]
-                except KeyError:
-                    valor = None
-                if pd.notna(valor) and valor != 999:
-                    valor_data = valor
-                    posto_usado = id_posto
-                    break
-            valores.append(valor_data)
-            postos_usados.append(posto_usado)
+            # Filtrar registros já carregados
+            df = df_registros[df_registros["id_posto"].isin(ids_postos)]
+            df_pivot = df.pivot(index="data", columns="id_posto", values="valor")
+            df_pivot = df_pivot.reindex(datas)
 
-        df_resultado[ponto['id']] = valores
-        df_postos_usados[ponto['id']] = postos_usados
+            valores = []
+            postos_usados = []
+            for data in df_pivot.index:
+                valor_data = None
+                posto_usado = None
+                for id_posto in ids_postos:
+                    try:
+                        valor = df_pivot.loc[data, id_posto]
+                    except KeyError:
+                        valor = None
+                    if pd.notna(valor) and valor != 999:
+                        valor_data = valor
+                        posto_usado = id_posto
+                        break
+                valores.append(valor_data)
+                postos_usados.append(posto_usado)
+
+            df_resultado[ponto['id']] = valores
+            df_postos_usados[ponto['id']] = postos_usados
 
     session.close()
-    os.makedirs("temp", exist_ok=True)
-    df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")
-    df_resultado.to_csv("temp/serie_diaria_multipontos.csv", index=False, sep=";")
+    with Timer("GERANDO ARQUIVOS CSV", logger=logger):
+        os.makedirs("temp", exist_ok=True)
+        df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")
+        df_resultado.to_csv("temp/serie_diaria_multipontos.csv", index=False, sep=";")
+
+    total_end_time = time.perf_counter()
+    total_duration_seconds = total_end_time - total_start_time
+    logger.info("Tempo total: %d segundos", total_duration_seconds)
 
     return df_resultado, df_postos_usados
 
@@ -146,7 +215,10 @@ def painel_busca_multiplos_pontos():
         name="Coordenadas (id,lat,lon)", 
         placeholder="id1,-4.023179,-39.836255\nid2,-2.907382,-40.042364", 
         width=400, 
-        height=150
+        height=150,
+        value="""1,-2.88818,-40.075498  
+                2,-3.03904,-39.698753 
+                3,-3.370856,-39.520125"""
     )
     #limite = pn.widgets.TextInput(name="LIMITE", placeholder="10")
     data_inicio = pn.widgets.DatePicker(name="Data início", value=pd.Timestamp("1974-01-01"))
@@ -399,90 +471,6 @@ def painel_busca_multiplos_pontos():
         sizing_mode="stretch_width",
     )
 
-    buscar_btn.on_click(lambda event: asyncio.ensure_future(buscar_async(event)))
-
-    def gerar_mapa_interativo():
-        m = folium.Map(location=[-5.4984, -39.3206], zoom_start=7, width='50%', height='450px')
-
-        for _, row in posto.iterrows():
-            lat = row['Latitude']
-            lon = row['Longitude']
-            nome = row['nome_posto']
-            id_posto = row['id_posto']
-            info_html = f"""
-            <div style="text-align:center;">
-                <b>{nome}</b><br>
-                ID: {id_posto}<br>
-                Latitude: {lat:.6f}<br>
-                Longitude: {lon:.6f}<br>
-                <button style="margin-top:8px;" onclick="navigator.clipboard.writeText('{id_posto},{lat:.6f},{lon:.6f}')">🔗</button>
-            </div>
-            """
-            folium.Marker(
-                location=[lat, lon],
-                icon=BeautifyIcon(
-                    icon_shape='marker',
-                    border_color='#1976d2',
-                    text_color='white',
-                    background_color='#1976d2',
-                    number=id_posto,
-                ),
-                popup=folium.Popup(info_html, max_width=250),
-                tooltip=f"{nome} (ID: {id_posto})",
-            ).add_to(m)
-
-        MousePosition().add_to(m)
-
-        class ClickPopup(MacroElement):
-            _template = Template("""
-                {% macro script(this, kwargs) %}
-                if (!window.clickPopupIdCounter) {
-                    window.clickPopupIdCounter = 1;
-                }
-                function onMapClick(e) {
-                    var lat = e.latlng.lat.toFixed(6);
-                    var lon = e.latlng.lng.toFixed(6);
-                    var id = window.clickPopupIdCounter++;
-                    var popupContent = `
-                    <div style="text-align:center;">
-                        <b>Latitude:</b> ${lat}<br>
-                        <b>Longitude:</b> ${lon}<br><br>
-                        <button onclick="navigator.clipboard.writeText('${id},' + ${lat} + ',' + ${lon})">🔗</button>
-                    </div>
-                    `;
-                    var popup = L.popup()
-                        .setLatLng(e.latlng)
-                        .setContent(popupContent)
-                        .openOn({{this._parent.get_name()}});
-                }
-                {{this._parent.get_name()}}.on('click', onMapClick);
-                {% endmacro %}
-            """)
-
-        m.add_child(ClickPopup())
-        return pn.pane.HTML(m._repr_html_(), height=450, sizing_mode='stretch_width')
-
-    return pn.Column(
-        pn.pane.Markdown("## 🔍 Buscar série para múltiplos pontos"),
-        pn.Row(
-            pn.Column(
-                input_coords,
-                pn.Row(data_inicio, data_fim),
-                granularidade,
-                pn.Row(buscar_btn, progresso, spinner),
-                sizing_mode="stretch_width",
-            ),
-            pn.Column(
-                pn.pane.Markdown("### 🗺️ Mapa 🗺️"),
-                gerar_mapa_interativo(),
-                sizing_mode="stretch_width",
-            ),
-            sizing_mode="stretch_width",
-        ),
-        resultado_nome,
-        pn.Row(btn_download_serie, btn_download_postos, sizing_mode="stretch_width"),
-        sizing_mode="stretch_width",
-    )
 
 # Carregamento dos dados
 municipio = load_municipio()
