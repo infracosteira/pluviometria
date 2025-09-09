@@ -124,17 +124,25 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         
     logger.info("Todos os postos foram pré-carregados em memória.")
     
-
     # Pré-carregar todos os registros necessários de uma vez só
     logger.info("Encontrando os n_postos mais próximos usando cálculo vetorizado...")
     
     with Timer(f"ENCONTRANDO OS {n_postos} POSTOS MAIS PRÓXIMOS", logger=logger):
         ids_postos_todos = set()
+ 
         for ponto in pontos:
-            # Encontrar os n_postos mais próximos usando cálculo vetorizado
-            dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
-            postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index]
-            ids_postos_todos.update(postos_proximos["id_posto"].tolist())
+            ponto_geom = func.ST_SetSRID(func.ST_MakePoint(ponto["lon"], ponto["lat"]), 4326)
+            query = (
+            session.query(
+                Posto.id_posto,
+                func.ST_Distance(Posto.coordenadas, ponto_geom).label("dist")
+            )
+            .filter(Posto.coordenadas != None)
+            .order_by(func.ST_Distance(Posto.coordenadas, ponto_geom))
+            .limit(n_postos)
+            )
+            ids_proximos = [row.id_posto for row in query.all()]
+            ids_postos_todos.update(ids_proximos)
         ids_postos_todos = list(ids_postos_todos)
     
     logger.info(ids_postos_todos)
@@ -143,22 +151,28 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         metadata = MetaData()
         registro_diario = Table("registro-diario", metadata, autoload_with=engine)
 
+        # Use SQLAlchemy Core for efficient bulk query
         stmt_registros = (
             select(
-                registro_diario.c.id_posto,
-                registro_diario.c.data,
-                registro_diario.c.valor
+            registro_diario.c.id_posto,
+            registro_diario.c.data,
+            registro_diario.c.valor
             )
             .where(
-                registro_diario.c.id_posto.in_(ids_postos_todos),
-                registro_diario.c.data >= data_inicio,
-                registro_diario.c.data <= data_fim
+            registro_diario.c.id_posto.in_(ids_postos_todos),
+            registro_diario.c.data >= data_inicio,
+            registro_diario.c.data <= data_fim
             )
         )
-        #registros = session.execute(stmt_registros).fetchall()
-        #df_registros = pd.DataFrame(registros, columns=["id_posto", "data", "valor"])
-        #df_registros["data"] = pd.to_datetime(df_registros["data"])
-        df_registros = pd.read_sql(stmt_registros, session.bind, columns=["id_posto", "data", "valor"], parse_dates=["data"])
+
+        # Use connection from session for better performance
+        with session.connection() as conn:
+            df_registros = pd.read_sql(
+            stmt_registros,
+            conn,
+            columns=["id_posto", "data", "valor"],
+            parse_dates=["data"]
+            )
 
         logger.info("Registros retornados: %d", len(df_registros))
 
@@ -168,7 +182,6 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
             if progresso_callback is not None:
                 progresso_callback(int(10 + 70 * (idx + 0.0) / total_pontos))
 
-            # Encontrar os n_postos mais próximos usando cálculo vetorizado
             dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
             postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index]
             ids_postos = postos_proximos["id_posto"].tolist()
