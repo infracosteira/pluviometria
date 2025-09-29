@@ -484,6 +484,7 @@ def painel_busca_multiplos_pontos():
         sizing_mode="stretch_width",
     )
 
+att
 
 # Carregamento dos dados
 municipio = load_municipio()
@@ -495,9 +496,9 @@ pn.extension('tabulator')
 app = FastAPI()
 
 # Conectando com Supabase
-url = os.getenv("SUPABASE_URL")
-key = os.getenv("SUPABASE_KEY")
-supabase: Client = create_client(url, key)
+#url = os.getenv("SUPABASE_URL")
+#key = os.getenv("SUPABASE_KEY")
+#supabase: Client = create_client(url, key)
 
 add_applications(
     {

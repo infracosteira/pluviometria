@@ -11,7 +11,11 @@ HOST = os.getenv("DB_HOST")
 PORT = os.getenv("DB_PORT")
 DBNAME = os.getenv("DB_NAME")
 
+if not all([USER, PASSWORD, HOST, PORT, DBNAME]):
+    raise ValueError("Uma ou mais variáveis de ambiente do banco de dados estão faltando. Por favor, verifique seu arquivo .env.")
+
 DATABASE_URL = f"postgresql://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}"
+#postgresql://postgres:973717@localhost:5432/pluviometria
 
 engine = create_engine(DATABASE_URL)
 

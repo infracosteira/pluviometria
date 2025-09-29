@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import ForeignKey,Date
-from fast_one.db_conection import reg, engine
+from db_conection import reg, engine
 from geoalchemy2 import Geometry
 from typing import Any
 from datetime import datetime
