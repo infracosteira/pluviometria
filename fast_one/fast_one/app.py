@@ -484,8 +484,6 @@ def painel_busca_multiplos_pontos():
         sizing_mode="stretch_width",
     )
 
-att
-
 # Carregamento dos dados
 municipio = load_municipio()
 posto = load_posto()
