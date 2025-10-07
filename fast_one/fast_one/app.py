@@ -149,7 +149,7 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
     with Timer("RECUPERANDO DADOS DOS POSTOS SELECIONADOS", logger=logger):
         metadata = MetaData()
-        registro_diario = Table("registro-diario", metadata, autoload_with=engine)
+        registro_diario = Table("registro_diario", metadata, autoload_with=engine)
 
         # Use SQLAlchemy Core for efficient bulk query
         stmt_registros = (
@@ -492,11 +492,6 @@ registro_diario = load_diario()
 
 pn.extension('tabulator')
 app = FastAPI()
-
-# Conectando com Supabase
-#url = os.getenv("SUPABASE_URL")
-#key = os.getenv("SUPABASE_KEY")
-#supabase: Client = create_client(url, key)
 
 add_applications(
     {

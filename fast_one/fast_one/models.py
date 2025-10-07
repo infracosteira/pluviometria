@@ -40,7 +40,7 @@ class NomePosto:
 
 @reg.mapped_as_dataclass
 class NomeEstado:
-    __tablename__ = "registro-diario"
+    __tablename__ = "registro_diario"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     id_posto: Mapped[int] = mapped_column(ForeignKey("posto.id_posto"))

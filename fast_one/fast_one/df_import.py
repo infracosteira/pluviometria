@@ -1,45 +1,51 @@
-import os
 import pandas as pd
+from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
-from supabase import create_client, Client
+import os
 import re
 
 load_dotenv()
-url = os.environ["SUPABASE_URL"]
-key = os.environ["SUPABASE_KEY"]
-supabase: Client = create_client(url, key)
+
+USER = os.getenv("DB_USER")
+PASSWORD = os.getenv("DB_PASSWORD")
+HOST = os.getenv("DB_HOST")
+PORT = os.getenv("DB_PORT")
+DBNAME = os.getenv("DB_NAME")
+
+# Cria conexão com o PostgreSQL local
+DATABASE_URL = f"postgresql://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}"
+engine = create_engine(DATABASE_URL)
+
 
 def load_municipio():
-    return pd.DataFrame(supabase.table("municipio").select("*").execute().data)
+    return pd.read_sql("SELECT * FROM municipio", engine)
+
 
 def load_posto():
-    df_posto = pd.DataFrame(supabase.table("posto").select("*").execute().data)
+    # Usamos ST_Y e ST_X (funções PostGIS) na query para extrair Latitude e Longitude
+    # de forma eficiente e segura, evitando a necessidade de parsing em Python.
+    query = text("""
+    SELECT
+        id_posto,
+        nome_posto,
+        numero_anos_medidos,
+        precipitacao_media_anual,
+        coordenadas,
+        ST_Y(coordenadas) AS "Latitude", 
+        ST_X(coordenadas) AS "Longitude"   
+    FROM posto
+    WHERE coordenadas IS NOT NULL
+      AND ST_GeometryType(coordenadas) = 'ST_Point' -- Filtro de robustez
+    """)
+    
+    with engine.connect() as connection:
+        # pd.read_sql retorna um DataFrame com as colunas "Latitude" e "Longitude"
+        return pd.read_sql(query, connection)
 
-    def parse_point_data(point_obj):
-        if isinstance(point_obj, dict) and \
-           point_obj.get('type') == 'Point' and \
-           'coordinates' in point_obj:
-            
-            longitude = float(point_obj['coordinates'][0])
-            latitude = float(point_obj['coordinates'][1])
-            return latitude, longitude
-        
-        elif isinstance(point_obj, str):
-            match = re.match(r'POINT\s*\(\s*([-+]?\d+\.?\d*)\s+([-+]?\d+\.?\d*)\s*\)', point_obj.strip(), re.IGNORECASE)
-            if match:
-                longitude = float(match.group(1))
-                latitude = float(match.group(2))
-                return latitude, longitude
-        
-        return None, None
-
-    df_posto[['Latitude', 'Longitude']] = df_posto['coordenadas'].apply(
-        lambda x: pd.Series(parse_point_data(x))
-    )
-    return df_posto
 
 def load_registro():
-    return pd.DataFrame(supabase.table("registro_mensal").select("*").execute().data)
+    return pd.read_sql("SELECT * FROM registro_mensal", engine)
+
 
 def load_diario():
-    return pd.DataFrame(supabase.table("registro-diario").select("*").execute().data)
+    return pd.read_sql("SELECT * FROM registro_diario", engine)
