@@ -151,7 +151,6 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         metadata = MetaData()
         registro_diario = Table("registro_diario", metadata, autoload_with=engine)
 
-        # Use SQLAlchemy Core for efficient bulk query
         stmt_registros = (
             select(
             registro_diario.c.id_posto,
@@ -165,7 +164,6 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
             )
         )
 
-        # Use connection from session for better performance
         with session.connection() as conn:
             df_registros = pd.read_sql(
             stmt_registros,
@@ -178,6 +176,10 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
     with Timer("PÓS-PROCESSAMENTO", logger=logger):
         total_pontos = len(pontos)
+        # Accumulate columns for batch assignment
+        resultado_cols = {}
+        postos_usados_cols = {}
+
         for idx, ponto in enumerate(pontos):
             if progresso_callback is not None:
                 progresso_callback(int(10 + 70 * (idx + 0.0) / total_pontos))
@@ -208,8 +210,11 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
                 valores.append(valor_data)
                 postos_usados.append(posto_usado)
 
-            df_resultado[ponto['id']] = valores
-            df_postos_usados[ponto['id']] = postos_usados
+            resultado_cols[ponto['id']] = valores
+            postos_usados_cols[ponto['id']] = postos_usados
+
+        df_resultado = pd.concat([df_resultado, pd.DataFrame(resultado_cols)], axis=1)
+        df_postos_usados = pd.concat([df_postos_usados, pd.DataFrame(postos_usados_cols)], axis=1)
 
     session.close()
     with Timer("GERANDO ARQUIVOS CSV", logger=logger):
@@ -225,6 +230,7 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
 def painel_busca_multiplos_pontos():
     input_coords = pn.widgets.TextAreaInput(
+        max_length=50000,
         name="Coordenadas (id,lat,lon)", 
         placeholder="id1,-4.023179,-39.836255\nid2,-2.907382,-40.042364", 
         width=400, 
@@ -297,7 +303,6 @@ def painel_busca_multiplos_pontos():
             progresso.bar_color = color
             spinner.value = value < 100
 
-        # Torna barra e spinner visíveis ao iniciar busca
         progresso.visible = False
         spinner.visible = True
 
@@ -394,8 +399,7 @@ def painel_busca_multiplos_pontos():
 
         finally:
             update_progress(100, 'success')
-            spinner.value = False  # Esconde o spinner quando termina
-            # Esconde barra e spinner após término
+            spinner.value = False  
             progresso.visible = False
             spinner.visible = False
 
