@@ -79,14 +79,36 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 pn.extension()
 app = FastAPI()
 
+from scipy.spatial import cKDTree
+import numpy as np
+import pandas as pd
+import os
+import time
+from sqlalchemy import select, func, MetaData, Table
+from contextlib import contextmanager
+
+# Timer auxiliar (mantém compatibilidade)
+@contextmanager
+def Timer(name, logger=None):
+    start = time.perf_counter()
+    yield
+    end = time.perf_counter()
+    dur = end - start
+    if logger:
+        logger.info(f"{name} concluído em {dur:.2f}s")
+    else:
+        print(f"{name} concluído em {dur:.2f}s")
+
+
 def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_postos=10, progresso_callback=None):
     logger.info("Iniciando a busca de séries temporais para múltiplos pontos.")
     total_start_time = time.perf_counter()
 
     session = SessionLocal()
 
-    # Processar entrada
-    
+    # ---------------------------------------------------------------------
+    # 1. PROCESSAR ENTRADA
+    # ---------------------------------------------------------------------
     logger.info("Processando entrada...")
     with Timer("PROCESSANDO ENTRADA", logger=logger):
         linhas = [linha.strip() for linha in entrada_texto.strip().splitlines()]
@@ -103,12 +125,13 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         datas = pd.date_range(data_inicio, data_fim, freq="D")
         df_resultado = pd.DataFrame({'data': datas})
         df_postos_usados = pd.DataFrame({'data': datas})
-    
-    logger.info("Entrada processada.")
 
-    # Pré-carregar todos os postos em memória para evitar múltiplas queries
+    logger.info("Entrada processada. Total de pontos: %d", len(pontos))
+
+    # ---------------------------------------------------------------------
+    # 2. CARREGAR POSTOS
+    # ---------------------------------------------------------------------
     logger.info("Pré-carregando todos os postos em memória...")
-    
     with Timer("PRÉ-CARREGAMENTO DE POSTOS", logger=logger):
         postos_query = session.query(
             Posto.id_posto,
@@ -117,106 +140,109 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
             func.ST_Y(Posto.coordenadas).label("lat")
         ).filter(Posto.coordenadas != None)
 
-        #postos_df = pd.DataFrame(postos_query.all(), columns=["id_posto", "nome_posto", "lon", "lat"])
-        postos_df = pd.read_sql(postos_query.statement, session.bind, columns=["id_posto", "nome_posto", "lon", "lat"])
+        postos_df = pd.read_sql(postos_query.statement, session.bind,
+                                columns=["id_posto", "nome_posto", "lon", "lat"])
 
-        logger.info("Registros retornados: %d", len(postos_df))
-        
-    logger.info("Todos os postos foram pré-carregados em memória.")
-    
-    # Pré-carregar todos os registros necessários de uma vez só
-    logger.info("Encontrando os n_postos mais próximos usando cálculo vetorizado...")
-    
+        logger.info("Postos carregados: %d", len(postos_df))
+
+    # ---------------------------------------------------------------------
+    # 3. SELECIONAR TODOS OS POSTOS PRÓXIMOS DE TODOS OS PONTOS
+    # ---------------------------------------------------------------------
+    logger.info("Encontrando os %d postos mais próximos (KDTree)...", n_postos)
     with Timer(f"ENCONTRANDO OS {n_postos} POSTOS MAIS PRÓXIMOS", logger=logger):
-        ids_postos_todos = set()
- 
-        for ponto in pontos:
-            ponto_geom = func.ST_SetSRID(func.ST_MakePoint(ponto["lon"], ponto["lat"]), 4326)
-            query = (
-            session.query(
-                Posto.id_posto,
-                func.ST_Distance(Posto.coordenadas, ponto_geom).label("dist")
-            )
-            .filter(Posto.coordenadas != None)
-            .order_by(func.ST_Distance(Posto.coordenadas, ponto_geom))
-            .limit(n_postos)
-            )
-            ids_proximos = [row.id_posto for row in query.all()]
-            ids_postos_todos.update(ids_proximos)
-        ids_postos_todos = list(ids_postos_todos)
-    
-    logger.info(ids_postos_todos)
+        postos_coords = postos_df[["lat", "lon"]].to_numpy()
+        pontos_coords = np.array([(p["lat"], p["lon"]) for p in pontos])
 
+        tree = cKDTree(postos_coords)
+        dists, indices = tree.query(pontos_coords, k=n_postos)
+
+        ids_postos_todos = postos_df.iloc[np.unique(indices.flatten())]["id_posto"].tolist()
+
+    logger.info("Total de postos selecionados para download: %d", len(ids_postos_todos))
+
+    # ---------------------------------------------------------------------
+    # 4. RECUPERAR REGISTROS NO INTERVALO DE DATAS
+    # ---------------------------------------------------------------------
     with Timer("RECUPERANDO DADOS DOS POSTOS SELECIONADOS", logger=logger):
         metadata = MetaData()
         registro_diario = Table("registro_diario", metadata, autoload_with=engine)
 
         stmt_registros = (
             select(
-            registro_diario.c.id_posto,
-            registro_diario.c.data,
-            registro_diario.c.valor
+                registro_diario.c.id_posto,
+                registro_diario.c.data,
+                registro_diario.c.valor
             )
             .where(
-            registro_diario.c.id_posto.in_(ids_postos_todos),
-            registro_diario.c.data >= data_inicio,
-            registro_diario.c.data <= data_fim
+                registro_diario.c.id_posto.in_(ids_postos_todos),
+                registro_diario.c.data >= data_inicio,
+                registro_diario.c.data <= data_fim
             )
         )
 
         with session.connection() as conn:
             df_registros = pd.read_sql(
-            stmt_registros,
-            conn,
-            columns=["id_posto", "data", "valor"],
-            parse_dates=["data"]
+                stmt_registros,
+                conn,
+                columns=["id_posto", "data", "valor"],
+                parse_dates=["data"]
             )
 
         logger.info("Registros retornados: %d", len(df_registros))
 
-    with Timer("PÓS-PROCESSAMENTO", logger=logger):
+    # ---------------------------------------------------------------------
+    # 5. PÓS-PROCESSAMENTO OTIMIZADO
+    # ---------------------------------------------------------------------
+    with Timer("PÓS-PROCESSAMENTO (KDTree + vetorização)", logger=logger):
         total_pontos = len(pontos)
-        # Accumulate columns for batch assignment
         resultado_cols = {}
         postos_usados_cols = {}
 
-        for idx, ponto in enumerate(pontos):
+        # Pivot global — apenas uma vez
+        df_pivot_global = (
+            df_registros.pivot(index="data", columns="id_posto", values="valor")
+            .reindex(datas)
+        )
+
+        pivot_array = df_pivot_global.to_numpy()
+        colunas_postos = df_pivot_global.columns.to_numpy()
+
+        for i, ponto in enumerate(pontos):
             if progresso_callback is not None:
-                progresso_callback(int(10 + 70 * (idx + 0.0) / total_pontos))
+                progresso_callback(int(10 + 70 * (i + 0.0) / total_pontos))
 
-            dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
-            postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index]
-            ids_postos = postos_proximos["id_posto"].tolist()
+            # Índices dos postos mais próximos (via KDTree)
+            idx_postos = np.atleast_1d(indices[i])
+            ids_postos = postos_df.iloc[idx_postos]["id_posto"].to_numpy()
 
-            # Filtrar registros já carregados
-            df = df_registros[df_registros["id_posto"].isin(ids_postos)]
-            df_pivot = df.pivot(index="data", columns="id_posto", values="valor")
-            df_pivot = df_pivot.reindex(datas)
+            # Extrair apenas as colunas correspondentes
+            sub = df_pivot_global[ids_postos]
+            arr = sub.to_numpy()
 
-            valores = []
-            postos_usados = []
-            for data in df_pivot.index:
-                valor_data = None
-                posto_usado = None
-                for id_posto in ids_postos:
-                    try:
-                        valor = df_pivot.loc[data, id_posto]
-                    except KeyError:
-                        valor = None
-                    if pd.notna(valor) and valor != 999:
-                        valor_data = valor
-                        posto_usado = id_posto
-                        break
-                valores.append(valor_data)
-                postos_usados.append(posto_usado)
+            # Máscara de valores válidos (não nulo e diferente de 999)
+            mask_valid = (arr != 999) & ~np.isnan(arr)
+
+            # Encontrar primeiro posto válido em cada linha
+            valid_any = mask_valid.any(axis=1)
+            first_valid = np.argmax(mask_valid, axis=1)
+
+            # Valores escolhidos
+            valores = np.full(len(sub), np.nan)
+            valores[valid_any] = arr[np.arange(len(sub))[valid_any], first_valid[valid_any]]
+
+            # Postos usados
+            postos_usados = np.full(len(sub), None)
+            postos_usados[valid_any] = ids_postos[first_valid[valid_any]]
 
             resultado_cols[ponto['id']] = valores
             postos_usados_cols[ponto['id']] = postos_usados
 
-        df_resultado = pd.concat([df_resultado, pd.DataFrame(resultado_cols)], axis=1)
-        df_postos_usados = pd.concat([df_postos_usados, pd.DataFrame(postos_usados_cols)], axis=1)
+    df_resultado = pd.concat([df_resultado, pd.DataFrame(resultado_cols)], axis=1)
+    df_postos_usados = pd.concat([df_postos_usados, pd.DataFrame(postos_usados_cols)], axis=1)
 
     session.close()
+
+
     with Timer("GERANDO ARQUIVOS CSV", logger=logger):
         os.makedirs("temp", exist_ok=True)
         df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")
@@ -224,13 +250,13 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
     total_end_time = time.perf_counter()
     total_duration_seconds = total_end_time - total_start_time
-    logger.info("Tempo total: %d segundos", total_duration_seconds)
+    logger.info("Tempo total: %.2f segundos", total_duration_seconds)
 
     return df_resultado, df_postos_usados
 
 def painel_busca_multiplos_pontos():
     input_coords = pn.widgets.TextAreaInput(
-        max_length=50000,
+        max_length=900000,
         name="Coordenadas (id,lat,lon)", 
         placeholder="id1,-4.023179,-39.836255\nid2,-2.907382,-40.042364", 
         width=400, 
@@ -279,21 +305,33 @@ def painel_busca_multiplos_pontos():
     )
 
     def agrupar_postos(df_postos, periodo):
-        df_postos = df_postos.copy()
-        df_postos["data"] = pd.to_datetime(df_postos["data"])
-        df_postos["periodo"] = df_postos["data"].dt.to_period(periodo)
+        """
+        Agrupa df_postos por período (ex: 'M' ou 'Y'), mantendo a menor data do período
+        e escolhendo o modo (valor mais frequente) para cada coluna de posto.
+        Otimizado para usar um único groupby. Retorna 'data' + colunas de postos.
+        """
+        df = df_postos.copy()
+        df["data"] = pd.to_datetime(df["data"])
+        df["periodo"] = df["data"].dt.to_period(periodo)
 
-        colunas_ids = [col for col in df_postos.columns if col not in ["data", "periodo"]]
-        df_agg = {"data": df_postos.groupby("periodo")["data"].min()}
+        def modo_rapido(s):
+            m = s.dropna().mode()
+            return m.iloc[0] if not m.empty else None
 
-        for col in colunas_ids:
-            df_agg[col] = df_postos.groupby("periodo")[col].agg(
-                lambda x: x.mode().iloc[0] if not x.mode().empty else None
-            )
+        # Construir mapa de agregação: data -> min, demais colunas -> modo
+        agg_map = {"data": "min"}
+        for col in df.columns:
+            if col not in ("data", "periodo"):
+                agg_map[col] = modo_rapido
 
-        df_postos_agregado = pd.concat(df_agg.values(), axis=1)
-        df_postos_agregado.columns = ["data"] + colunas_ids
-        return df_postos_agregado.reset_index(drop=True)
+        agrupado = df.groupby("periodo").agg(agg_map).reset_index(drop=True)
+
+        # Converter colunas de postos para Int64 (nullable) quando aplicável
+        for col in agrupado.columns:
+            if col != "data":
+                agrupado[col] = agrupado[col].astype("Int64")
+
+        return agrupado
 
     import asyncio
 

@@ -115,7 +115,7 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
             Posto.nome_posto,
             func.ST_X(Posto.coordenadas).label("lon"),
             func.ST_Y(Posto.coordenadas).label("lat")
-        ).filter(Posto.coordenadas != None)
+        ).filter(Posto.coordenadas != None) #adicionar filtro de data
 
         #postos_df = pd.DataFrame(postos_query.all(), columns=["id_posto", "nome_posto", "lon", "lat"])
         postos_df = pd.read_sql(postos_query.statement, session.bind, columns=["id_posto", "nome_posto", "lon", "lat"])
@@ -176,7 +176,7 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
     with Timer("PÓS-PROCESSAMENTO", logger=logger):
         total_pontos = len(pontos)
-        # Accumulate columns for batch assignment
+
         resultado_cols = {}
         postos_usados_cols = {}
 
@@ -184,14 +184,17 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
             if progresso_callback is not None:
                 progresso_callback(int(10 + 70 * (idx + 0.0) / total_pontos))
 
+#with timer aqui
             dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
-            postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index]
-            ids_postos = postos_proximos["id_posto"].tolist()
+            postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index] # investigar retorno
+            ids_postos = postos_proximos["id_posto"].tolist() #necessario?
+#           evitar uso de loc onde for possivel
 
-            # Filtrar registros já carregados
-            df = df_registros[df_registros["id_posto"].isin(ids_postos)]
-            df_pivot = df.pivot(index="data", columns="id_posto", values="valor")
-            df_pivot = df_pivot.reindex(datas)
+            df = df_registros[df_registros["id_posto"].isin(ids_postos)] #util?
+            df_pivot = df.pivot(index="data", columns="id_posto", values="valor") #objetivo? data em indice, precisa?
+            df_pivot = df_pivot.reindex(datas) #fazer o filtro antes, na consulta sql?
+
+#analizar com exemplos menores pos correção
 
             valores = []
             postos_usados = []
@@ -202,7 +205,7 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
                     try:
                         valor = df_pivot.loc[data, id_posto]
                     except KeyError:
-                        valor = None
+                        valor = None #retorno nulo?
                     if pd.notna(valor) and valor != 999:
                         valor_data = valor
                         posto_usado = id_posto
@@ -215,8 +218,10 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
         df_resultado = pd.concat([df_resultado, pd.DataFrame(resultado_cols)], axis=1)
         df_postos_usados = pd.concat([df_postos_usados, pd.DataFrame(postos_usados_cols)], axis=1)
+        #return
 
     session.close()
+    
     with Timer("GERANDO ARQUIVOS CSV", logger=logger):
         os.makedirs("temp", exist_ok=True)
         df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")
@@ -230,7 +235,7 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
 def painel_busca_multiplos_pontos():
     input_coords = pn.widgets.TextAreaInput(
-        max_length=50000,
+        max_length=900000,
         name="Coordenadas (id,lat,lon)", 
         placeholder="id1,-4.023179,-39.836255\nid2,-2.907382,-40.042364", 
         width=400, 
