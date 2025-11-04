@@ -20,7 +20,8 @@ class Timer:
 
     def __enter__(self):
         """Called when entering the 'with' block."""
-        self.start_time = time.perf_counter()
+        pass
+        """ self.start_time = time.perf_counter()
         message = f"\nStarting '{self.description}'..."
         
         if self.logger:
@@ -28,11 +29,14 @@ class Timer:
         else:
             print(message)
         
-        return self
+        return self """
 
     def __exit__(self, exc_type, exc_value, traceback):
         """Called when exiting the 'with' block."""
-        end_time = time.perf_counter()
+
+        pass
+
+        """ end_time = time.perf_counter()
         duration = end_time - self.start_time
         
         message = f"\n'{self.description}' finished in {duration:.4f} seconds."
@@ -41,3 +45,4 @@ class Timer:
             self.logger.log(self.level, message)
         else:
             print(message)
+        """

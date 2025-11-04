@@ -7,6 +7,7 @@ import time
 import pandas as pd
 import panel as pn
 import folium
+
 from folium.plugins import MousePosition, BeautifyIcon
 from folium import MacroElement
 from jinja2 import Template
@@ -111,16 +112,25 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
     # ---------------------------------------------------------------------
     logger.info("Processando entrada...")
     with Timer("PROCESSANDO ENTRADA", logger=logger):
-        linhas = [linha.strip() for linha in entrada_texto.strip().splitlines()]
+        linhas = [linha.strip() for linha in entrada_texto.strip().splitlines() if linha.strip()]
         pontos = []
         for linha in linhas:
-            partes = linha.split(",")
+            partes = [p.strip() for p in linha.split(",")]
             if len(partes) != 3:
+                logger.warning("Linha ignorada por formato inválido: %s", linha)
                 continue
-            id_ponto = partes[0].strip()
-            lat = float(partes[1].strip())
-            lon = float(partes[2].strip())
+            id_ponto = partes[0]
+            try:
+                lat = float(partes[1])
+                lon = float(partes[2])
+            except ValueError:
+                # Provavelmente uma linha de cabeçalho ou valores inválidos; ignorar
+                logger.info("Linha ignorada por valores não numéricos: %s", linha)
+                continue
             pontos.append({'id': id_ponto, 'lat': lat, 'lon': lon})
+
+        if not pontos:
+            raise ValueError("Nenhum ponto válido encontrado na entrada; verifique o formato (id,lat,lon) e remova cabeçalhos.")
 
         datas = pd.date_range(data_inicio, data_fim, freq="D")
         df_resultado = pd.DataFrame({'data': datas})
@@ -237,12 +247,17 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
             resultado_cols[ponto['id']] = valores
             postos_usados_cols[ponto['id']] = postos_usados
 
+    # ---------------------------------------------------------------------
+    # 6. CONCATENAR RESULTADOS
+    # ---------------------------------------------------------------------
     df_resultado = pd.concat([df_resultado, pd.DataFrame(resultado_cols)], axis=1)
     df_postos_usados = pd.concat([df_postos_usados, pd.DataFrame(postos_usados_cols)], axis=1)
 
     session.close()
 
-
+    # ---------------------------------------------------------------------
+    # 7. GERAR SAÍDA
+    # ---------------------------------------------------------------------
     with Timer("GERANDO ARQUIVOS CSV", logger=logger):
         os.makedirs("temp", exist_ok=True)
         df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")

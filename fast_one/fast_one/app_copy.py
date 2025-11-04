@@ -10,10 +10,8 @@ import folium
 from folium.plugins import MousePosition, BeautifyIcon
 from folium import MacroElement
 from jinja2 import Template
-from shapely.geometry import Point
 
-from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI
 from panel.io.fastapi import add_applications
 
 from sqlalchemy import (
@@ -23,9 +21,6 @@ from sqlalchemy.engine import Engine
 
 from sqlalchemy.ext.declarative import declarative_base
 from geoalchemy2 import Geometry
-from geoalchemy2.shape import from_shape
-
-from supabase import create_client, Client
 
 from .db_conection import SessionLocal, engine
 from .df_import import load_municipio, load_posto, load_registro, load_diario
@@ -117,7 +112,6 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
             func.ST_Y(Posto.coordenadas).label("lat")
         ).filter(Posto.coordenadas != None) #adicionar filtro de data
 
-        #postos_df = pd.DataFrame(postos_query.all(), columns=["id_posto", "nome_posto", "lon", "lat"])
         postos_df = pd.read_sql(postos_query.statement, session.bind, columns=["id_posto", "nome_posto", "lon", "lat"])
 
         logger.info("Registros retornados: %d", len(postos_df))
@@ -129,9 +123,11 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
     
     with Timer(f"ENCONTRANDO OS {n_postos} POSTOS MAIS PRÓXIMOS", logger=logger):
         ids_postos_todos = set()
- 
+        ids_por_ponto = {}  # map: ponto_id -> lista de postos mais próximos
+
         for ponto in pontos:
             ponto_geom = func.ST_SetSRID(func.ST_MakePoint(ponto["lon"], ponto["lat"]), 4326)
+
             query = (
             session.query(
                 Posto.id_posto,
@@ -141,11 +137,19 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
             .order_by(func.ST_Distance(Posto.coordenadas, ponto_geom))
             .limit(n_postos)
             )
+
             ids_proximos = [row.id_posto for row in query.all()]
+            ids_por_ponto[ponto['id']] = ids_proximos
+
             ids_postos_todos.update(ids_proximos)
+
+            """ logger.info("IDs próximos para o ponto %s: %s", ponto['id'], ids_proximos)
+            logger.info("Total de IDs únicos acumulados até agora: %d", len(ids_postos_todos)) """
+
         ids_postos_todos = list(ids_postos_todos)
-    
-    logger.info(ids_postos_todos)
+        logger.info("resultado de ids_postos_todos: %s", ids_postos_todos)
+
+    #para todos os ids em ids_postos_todos, fazer a seguinte query
 
     with Timer("RECUPERANDO DADOS DOS POSTOS SELECIONADOS", logger=logger):
         metadata = MetaData()
@@ -162,7 +166,7 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
             registro_diario.c.data >= data_inicio,
             registro_diario.c.data <= data_fim
             )
-        )
+        ) #ainda é muito dado, surge então a quantidade de postos proximos para teste
 
         with session.connection() as conn:
             df_registros = pd.read_sql(
@@ -175,50 +179,51 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
         logger.info("Registros retornados: %d", len(df_registros))
 
     with Timer("PÓS-PROCESSAMENTO", logger=logger):
-        total_pontos = len(pontos)
 
         resultado_cols = {}
         postos_usados_cols = {}
 
-        for idx, ponto in enumerate(pontos):
-            if progresso_callback is not None:
-                progresso_callback(int(10 + 70 * (idx + 0.0) / total_pontos))
+        for ponto in pontos:
 
 #with timer aqui
-            dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
-            postos_proximos = postos_df.loc[dists.nsmallest(n_postos).index] # investigar retorno
-            ids_postos = postos_proximos["id_posto"].tolist() #necessario?
-#           evitar uso de loc onde for possivel
+            with Timer("CALCULANDO POSTOS PRÓXIMOS E GERANDO PIVOT", logger=logger):
+                #dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
 
-            df = df_registros[df_registros["id_posto"].isin(ids_postos)] #util?
-            df_pivot = df.pivot(index="data", columns="id_posto", values="valor") #objetivo? data em indice, precisa?
-            df_pivot = df_pivot.reindex(datas) #fazer o filtro antes, na consulta sql?
+                ids_postos = ids_por_ponto.get(ponto['id'], [])
+
+                # evitar uso de loc onde for possivel
+    
+                df = df_registros[df_registros["id_posto"].isin(ids_postos)]  # util?
+
+                df_pivot = df.pivot(index="data", columns="id_posto", values="valor")  # objetivo? data em indice, precisa?
+
+                df_pivot = df_pivot.reindex(datas)  # fazer o filtro antes, na consulta sql?
+
+                #duckdb e polars
 
 #analizar com exemplos menores pos correção
-
-            valores = []
-            postos_usados = []
-            for data in df_pivot.index:
-                valor_data = None
-                posto_usado = None
-                for id_posto in ids_postos:
-                    try:
+            with Timer("SELECIONANDO VALORES DOS POSTOS MAIS PRÓXIMOS", logger=logger):
+                valores = []
+                postos_usados = []
+                for data in df_pivot.index:
+                    valor_data = None
+                    posto_usado = None
+                    for id_posto in ids_postos:
                         valor = df_pivot.loc[data, id_posto]
-                    except KeyError:
-                        valor = None #retorno nulo?
-                    if pd.notna(valor) and valor != 999:
-                        valor_data = valor
-                        posto_usado = id_posto
-                        break
-                valores.append(valor_data)
-                postos_usados.append(posto_usado)
+                        if pd.notna(valor) and valor != 999:
+                            valor_data = valor
+                            posto_usado = id_posto
+                            break
+                    valores.append(valor_data)
+                    postos_usados.append(posto_usado)
 
-            resultado_cols[ponto['id']] = valores
-            postos_usados_cols[ponto['id']] = postos_usados
+                resultado_cols[ponto['id']] = valores
+                postos_usados_cols[ponto['id']] = postos_usados
+            #break
 
         df_resultado = pd.concat([df_resultado, pd.DataFrame(resultado_cols)], axis=1)
         df_postos_usados = pd.concat([df_postos_usados, pd.DataFrame(postos_usados_cols)], axis=1)
-        #return
+        
 
     session.close()
     
