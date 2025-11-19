@@ -143,8 +143,8 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
             ids_postos_todos.update(ids_proximos)
 
-            """ logger.info("IDs próximos para o ponto %s: %s", ponto['id'], ids_proximos)
-            logger.info("Total de IDs únicos acumulados até agora: %d", len(ids_postos_todos)) """
+            logger.info("IDs próximos para o ponto %s: %s", ponto['id'], ids_proximos)
+            logger.info("Total de IDs únicos acumulados até agora: %d", len(ids_postos_todos))
 
         ids_postos_todos = list(ids_postos_todos)
         logger.info("resultado de ids_postos_todos: %s", ids_postos_todos)
@@ -185,19 +185,15 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
         for ponto in pontos:
 
-#with timer aqui
             with Timer("CALCULANDO POSTOS PRÓXIMOS E GERANDO PIVOT", logger=logger):
-                #dists = ((postos_df["lat"] - ponto["lat"])**2 + (postos_df["lon"] - ponto["lon"])**2).pow(0.5)
 
                 ids_postos = ids_por_ponto.get(ponto['id'], [])
-
-                # evitar uso de loc onde for possivel
     
-                df = df_registros[df_registros["id_posto"].isin(ids_postos)]  # util?
+                df = df_registros[df_registros["id_posto"].isin(ids_postos)] 
 
-                df_pivot = df.pivot(index="data", columns="id_posto", values="valor")  # objetivo? data em indice, precisa?
+                df_pivot = df.pivot(index="data", columns="id_posto", values="valor")  
 
-                df_pivot = df_pivot.reindex(datas)  # fazer o filtro antes, na consulta sql?
+                df_pivot = df_pivot.reindex(datas)
 
                 #duckdb e polars
 
@@ -219,7 +215,6 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
                 resultado_cols[ponto['id']] = valores
                 postos_usados_cols[ponto['id']] = postos_usados
-            #break
 
         df_resultado = pd.concat([df_resultado, pd.DataFrame(resultado_cols)], axis=1)
         df_postos_usados = pd.concat([df_postos_usados, pd.DataFrame(postos_usados_cols)], axis=1)
@@ -239,6 +234,25 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
     return df_resultado, df_postos_usados
 
 def painel_busca_multiplos_pontos():
+
+    header_html = """
+    <div style="
+        background:#ffffff;
+        padding:15px;
+        text-align:center;
+        border-bottom: 2px solid #ddd;
+    ">
+        <img src="https://logodownload.org/wp-content/uploads/2016/09/ufc-logo-universidade.png" height="75" style="margin-right:15px;">
+        <img src="https://www.unilab.edu.br/wp-content/uploads/2014/02/Logo-Unilab-vertical-para-fundo-claro.jpg" height="75" style="margin-right:15px;">
+        <img src="https://files.passeidireto.com/d02ca57a-be06-46fe-8761-acba8bcf27fb/d02ca57a-be06-46fe-8761-acba8bcf27fb.png" height="75" style="margin-right:15px;">
+        <img src="https://www.funcap.ce.gov.br/wp-content/uploads/sites/52/2018/08/Logomarca-Cientista-Chefe-CMYK.png" height="75" style="margin-right:15px;">
+        <img src="https://www.uece.br/wp-content/uploads/2019/11/logouececentcolor.png" height="75" style="margin-right:15px;">
+        <img src="https://www.funcap.ce.gov.br/wp-content/uploads/sites/52/2015/07/funcap.png" height="75" style="margin-right:15px;">
+        <img src="https://www.seduc.ce.gov.br/wp-content/uploads/sites/37/2021/04/001_marca_vertical_color.png" height="75" style="margin-right:15px;">
+    </div>
+    """
+
+    header = pn.pane.HTML(header_html, sizing_mode="stretch_width")
     input_coords = pn.widgets.TextAreaInput(
         max_length=900000,
         name="Coordenadas (id,lat,lon)", 
@@ -416,7 +430,7 @@ def painel_busca_multiplos_pontos():
     buscar_btn.on_click(lambda event: asyncio.ensure_future(buscar_async(event)))
 
     def gerar_mapa_interativo():
-        m = folium.Map(location=[-5.4984, -39.3206], zoom_start=7, width='50%', height='450px')
+        m = folium.Map(location=[-5.4984, -39.3206], zoom_start=7, height='450px')
 
         for _, row in posto.iterrows():
             lat = row['Latitude']
@@ -474,27 +488,41 @@ def painel_busca_multiplos_pontos():
             """)
 
         m.add_child(ClickPopup())
-        return pn.pane.HTML(m._repr_html_(), height=450, sizing_mode='stretch_width')
+        return pn.pane.HTML(
+            m._repr_html_(),
+            height=450,
+            width=900,            # 👈 controla o tamanho REAL do mapa
+            sizing_mode="fixed",  # 👈 impede que ele expanda demais
+            styles={'overflow': 'hidden'}
+        )
+
 
     return pn.Column(
+        header,  # LOGOS NO TOPO
+        pn.Spacer(height=10),
         pn.pane.Markdown("## 🔍 Buscar série para múltiplos pontos"),
+
         pn.Row(
             pn.Column(
                 input_coords,
                 pn.Row(data_inicio, data_fim),
                 granularidade,
                 pn.Row(buscar_btn, progresso, spinner),
-                sizing_mode="stretch_width",
+                width=900,              # <-- largura máxima do mapa
+                sizing_mode="fixed"
             ),
             pn.Column(
                 pn.pane.Markdown("### 🗺️ Mapa 🗺️"),
                 gerar_mapa_interativo(),
-                sizing_mode="stretch_width",
+                sizing_mode="stretch_both",
             ),
             sizing_mode="stretch_width",
+            height=600,
         ),
+
+        pn.Spacer(height=20),
         resultado_nome,
-        pn.Row(btn_download_serie, btn_download_postos, sizing_mode="stretch_width"),
+        pn.Row(btn_download_serie, btn_download_postos),
         sizing_mode="stretch_width",
     )
 
