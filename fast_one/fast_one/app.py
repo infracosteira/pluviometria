@@ -7,14 +7,11 @@ import time
 import pandas as pd
 import panel as pn
 import folium
-
 from folium.plugins import MousePosition, BeautifyIcon
 from folium import MacroElement
 from jinja2 import Template
-from shapely.geometry import Point
 
-from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI
 from panel.io.fastapi import add_applications
 
 from sqlalchemy import (
@@ -24,9 +21,6 @@ from sqlalchemy.engine import Engine
 
 from sqlalchemy.ext.declarative import declarative_base
 from geoalchemy2 import Geometry
-from geoalchemy2.shape import from_shape
-
-from supabase import create_client, Client
 
 from .db_conection import SessionLocal, engine
 from .df_import import load_municipio, load_posto, load_registro, load_diario
@@ -80,184 +74,154 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 pn.extension()
 app = FastAPI()
 
-from scipy.spatial import cKDTree
-import numpy as np
-import pandas as pd
-import os
-import time
-from sqlalchemy import select, func, MetaData, Table
-from contextlib import contextmanager
-
-# Timer auxiliar (mantém compatibilidade)
-@contextmanager
-def Timer(name, logger=None):
-    start = time.perf_counter()
-    yield
-    end = time.perf_counter()
-    dur = end - start
-    if logger:
-        logger.info(f"{name} concluído em {dur:.2f}s")
-    else:
-        print(f"{name} concluído em {dur:.2f}s")
-
-
 def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_postos=10, progresso_callback=None):
     logger.info("Iniciando a busca de séries temporais para múltiplos pontos.")
     total_start_time = time.perf_counter()
 
     session = SessionLocal()
 
-    # ---------------------------------------------------------------------
-    # 1. PROCESSAR ENTRADA
-    # ---------------------------------------------------------------------
+    # Processar entrada
+    
     logger.info("Processando entrada...")
     with Timer("PROCESSANDO ENTRADA", logger=logger):
-        linhas = [linha.strip() for linha in entrada_texto.strip().splitlines() if linha.strip()]
+        linhas = [linha.strip() for linha in entrada_texto.strip().splitlines()]
         pontos = []
         for linha in linhas:
-            partes = [p.strip() for p in linha.split(",")]
+            partes = linha.split(",")
             if len(partes) != 3:
-                logger.warning("Linha ignorada por formato inválido: %s", linha)
                 continue
-            id_ponto = partes[0]
-            try:
-                lat = float(partes[1])
-                lon = float(partes[2])
-            except ValueError:
-                # Provavelmente uma linha de cabeçalho ou valores inválidos; ignorar
-                logger.info("Linha ignorada por valores não numéricos: %s", linha)
-                continue
+            id_ponto = partes[0].strip()
+            lat = float(partes[1].strip())
+            lon = float(partes[2].strip())
             pontos.append({'id': id_ponto, 'lat': lat, 'lon': lon})
-
-        if not pontos:
-            raise ValueError("Nenhum ponto válido encontrado na entrada; verifique o formato (id,lat,lon) e remova cabeçalhos.")
 
         datas = pd.date_range(data_inicio, data_fim, freq="D")
         df_resultado = pd.DataFrame({'data': datas})
         df_postos_usados = pd.DataFrame({'data': datas})
+    
+    logger.info("Entrada processada.")
 
-    logger.info("Entrada processada. Total de pontos: %d", len(pontos))
-
-    # ---------------------------------------------------------------------
-    # 2. CARREGAR POSTOS
-    # ---------------------------------------------------------------------
+    # Pré-carregar todos os postos em memória para evitar múltiplas queries
     logger.info("Pré-carregando todos os postos em memória...")
+    
     with Timer("PRÉ-CARREGAMENTO DE POSTOS", logger=logger):
         postos_query = session.query(
             Posto.id_posto,
             Posto.nome_posto,
             func.ST_X(Posto.coordenadas).label("lon"),
             func.ST_Y(Posto.coordenadas).label("lat")
-        ).filter(Posto.coordenadas != None)
+        ).filter(Posto.coordenadas != None) #adicionar filtro de data
 
-        postos_df = pd.read_sql(postos_query.statement, session.bind,
-                                columns=["id_posto", "nome_posto", "lon", "lat"])
+        postos_df = pd.read_sql(postos_query.statement, session.bind, columns=["id_posto", "nome_posto", "lon", "lat"])
 
-        logger.info("Postos carregados: %d", len(postos_df))
-
-    # ---------------------------------------------------------------------
-    # 3. SELECIONAR TODOS OS POSTOS PRÓXIMOS DE TODOS OS PONTOS
-    # ---------------------------------------------------------------------
-    logger.info("Encontrando os %d postos mais próximos (KDTree)...", n_postos)
+        logger.info("Registros retornados: %d", len(postos_df))
+        
+    logger.info("Todos os postos foram pré-carregados em memória.")
+    
+    # Pré-carregar todos os registros necessários de uma vez só
+    logger.info("Encontrando os n_postos mais próximos usando cálculo vetorizado...")
+    
     with Timer(f"ENCONTRANDO OS {n_postos} POSTOS MAIS PRÓXIMOS", logger=logger):
-        postos_coords = postos_df[["lat", "lon"]].to_numpy()
-        pontos_coords = np.array([(p["lat"], p["lon"]) for p in pontos])
+        ids_postos_todos = set()
+        ids_por_ponto = {}  # map: ponto_id -> lista de postos mais próximos
 
-        tree = cKDTree(postos_coords)
-        dists, indices = tree.query(pontos_coords, k=n_postos)
+        for ponto in pontos:
+            ponto_geom = func.ST_SetSRID(func.ST_MakePoint(ponto["lon"], ponto["lat"]), 4326)
 
-        ids_postos_todos = postos_df.iloc[np.unique(indices.flatten())]["id_posto"].tolist()
+            query = (
+            session.query(
+                Posto.id_posto,
+                func.ST_Distance(Posto.coordenadas, ponto_geom).label("dist")
+            )
+            .filter(Posto.coordenadas != None)
+            .order_by(func.ST_Distance(Posto.coordenadas, ponto_geom))
+            .limit(n_postos)
+            )
 
-    logger.info("Total de postos selecionados para download: %d", len(ids_postos_todos))
+            ids_proximos = [row.id_posto for row in query.all()]
+            ids_por_ponto[ponto['id']] = ids_proximos
 
-    # ---------------------------------------------------------------------
-    # 4. RECUPERAR REGISTROS NO INTERVALO DE DATAS
-    # ---------------------------------------------------------------------
+            ids_postos_todos.update(ids_proximos)
+
+            logger.info("IDs próximos para o ponto %s: %s", ponto['id'], ids_proximos)
+            logger.info("Total de IDs únicos acumulados até agora: %d", len(ids_postos_todos))
+
+        ids_postos_todos = list(ids_postos_todos)
+        logger.info("resultado de ids_postos_todos: %s", ids_postos_todos)
+
+    #para todos os ids em ids_postos_todos, fazer a seguinte query
+
     with Timer("RECUPERANDO DADOS DOS POSTOS SELECIONADOS", logger=logger):
         metadata = MetaData()
         registro_diario = Table("registro_diario", metadata, autoload_with=engine)
 
         stmt_registros = (
             select(
-                registro_diario.c.id_posto,
-                registro_diario.c.data,
-                registro_diario.c.valor
+            registro_diario.c.id_posto,
+            registro_diario.c.data,
+            registro_diario.c.valor
             )
             .where(
-                registro_diario.c.id_posto.in_(ids_postos_todos),
-                registro_diario.c.data >= data_inicio,
-                registro_diario.c.data <= data_fim
+            registro_diario.c.id_posto.in_(ids_postos_todos),
+            registro_diario.c.data >= data_inicio,
+            registro_diario.c.data <= data_fim
             )
-        )
+        ) #ainda é muito dado, surge então a quantidade de postos proximos para teste
 
         with session.connection() as conn:
             df_registros = pd.read_sql(
-                stmt_registros,
-                conn,
-                columns=["id_posto", "data", "valor"],
-                parse_dates=["data"]
+            stmt_registros,
+            conn,
+            columns=["id_posto", "data", "valor"],
+            parse_dates=["data"]
             )
 
         logger.info("Registros retornados: %d", len(df_registros))
 
-    # ---------------------------------------------------------------------
-    # 5. PÓS-PROCESSAMENTO OTIMIZADO
-    # ---------------------------------------------------------------------
-    with Timer("PÓS-PROCESSAMENTO (KDTree + vetorização)", logger=logger):
-        total_pontos = len(pontos)
+    with Timer("PÓS-PROCESSAMENTO", logger=logger):
+
         resultado_cols = {}
         postos_usados_cols = {}
 
-        # Pivot global — apenas uma vez
-        df_pivot_global = (
-            df_registros.pivot(index="data", columns="id_posto", values="valor")
-            .reindex(datas)
-        )
+        for ponto in pontos:
 
-        pivot_array = df_pivot_global.to_numpy()
-        colunas_postos = df_pivot_global.columns.to_numpy()
+            with Timer("CALCULANDO POSTOS PRÓXIMOS E GERANDO PIVOT", logger=logger):
 
-        for i, ponto in enumerate(pontos):
-            if progresso_callback is not None:
-                progresso_callback(int(10 + 70 * (i + 0.0) / total_pontos))
+                ids_postos = ids_por_ponto.get(ponto['id'], [])
+    
+                df = df_registros[df_registros["id_posto"].isin(ids_postos)] 
 
-            # Índices dos postos mais próximos (via KDTree)
-            idx_postos = np.atleast_1d(indices[i])
-            ids_postos = postos_df.iloc[idx_postos]["id_posto"].to_numpy()
+                df_pivot = df.pivot(index="data", columns="id_posto", values="valor")  
 
-            # Extrair apenas as colunas correspondentes
-            sub = df_pivot_global[ids_postos]
-            arr = sub.to_numpy()
+                df_pivot = df_pivot.reindex(datas)
 
-            # Máscara de valores válidos (não nulo e diferente de 999)
-            mask_valid = (arr != 999) & ~np.isnan(arr)
+                #duckdb e polars
 
-            # Encontrar primeiro posto válido em cada linha
-            valid_any = mask_valid.any(axis=1)
-            first_valid = np.argmax(mask_valid, axis=1)
+#analizar com exemplos menores pos correção
+            with Timer("SELECIONANDO VALORES DOS POSTOS MAIS PRÓXIMOS", logger=logger):
+                valores = []
+                postos_usados = []
+                for data in df_pivot.index:
+                    valor_data = None
+                    posto_usado = None
+                    for id_posto in ids_postos:
+                        valor = df_pivot.loc[data, id_posto]
+                        if pd.notna(valor) and valor != 999:
+                            valor_data = valor
+                            posto_usado = id_posto
+                            break
+                    valores.append(valor_data)
+                    postos_usados.append(posto_usado)
 
-            # Valores escolhidos
-            valores = np.full(len(sub), np.nan)
-            valores[valid_any] = arr[np.arange(len(sub))[valid_any], first_valid[valid_any]]
+                resultado_cols[ponto['id']] = valores
+                postos_usados_cols[ponto['id']] = postos_usados
 
-            # Postos usados
-            postos_usados = np.full(len(sub), None)
-            postos_usados[valid_any] = ids_postos[first_valid[valid_any]]
-
-            resultado_cols[ponto['id']] = valores
-            postos_usados_cols[ponto['id']] = postos_usados
-
-    # ---------------------------------------------------------------------
-    # 6. CONCATENAR RESULTADOS
-    # ---------------------------------------------------------------------
-    df_resultado = pd.concat([df_resultado, pd.DataFrame(resultado_cols)], axis=1)
-    df_postos_usados = pd.concat([df_postos_usados, pd.DataFrame(postos_usados_cols)], axis=1)
+        df_resultado = pd.concat([df_resultado, pd.DataFrame(resultado_cols)], axis=1)
+        df_postos_usados = pd.concat([df_postos_usados, pd.DataFrame(postos_usados_cols)], axis=1)
+        
 
     session.close()
-
-    # ---------------------------------------------------------------------
-    # 7. GERAR SAÍDA
-    # ---------------------------------------------------------------------
+    
     with Timer("GERANDO ARQUIVOS CSV", logger=logger):
         os.makedirs("temp", exist_ok=True)
         df_postos_usados.to_csv("temp/postos_utilizados.csv", index=False, sep=";")
@@ -265,11 +229,30 @@ def buscar_series_para_multiplos_pontos(entrada_texto, data_inicio, data_fim, n_
 
     total_end_time = time.perf_counter()
     total_duration_seconds = total_end_time - total_start_time
-    logger.info("Tempo total: %.2f segundos", total_duration_seconds)
+    logger.info("Tempo total: %d segundos", total_duration_seconds)
 
     return df_resultado, df_postos_usados
 
 def painel_busca_multiplos_pontos():
+
+    header_html = """
+    <div style="
+        background:#ffffff;
+        padding:15px;
+        text-align:center;
+        border-bottom: 2px solid #ddd;
+    ">
+        <img src="https://logodownload.org/wp-content/uploads/2016/09/ufc-logo-universidade.png" height="75" style="margin-right:15px;">
+        <img src="https://www.unilab.edu.br/wp-content/uploads/2014/02/Logo-Unilab-vertical-para-fundo-claro.jpg" height="75" style="margin-right:15px;">
+        <img src="https://files.passeidireto.com/d02ca57a-be06-46fe-8761-acba8bcf27fb/d02ca57a-be06-46fe-8761-acba8bcf27fb.png" height="75" style="margin-right:15px;">
+        <img src="https://www.funcap.ce.gov.br/wp-content/uploads/sites/52/2018/08/Logomarca-Cientista-Chefe-CMYK.png" height="75" style="margin-right:15px;">
+        <img src="https://www.uece.br/wp-content/uploads/2019/11/logouececentcolor.png" height="75" style="margin-right:15px;">
+        <img src="https://www.funcap.ce.gov.br/wp-content/uploads/sites/52/2015/07/funcap.png" height="75" style="margin-right:15px;">
+        <img src="https://www.seduc.ce.gov.br/wp-content/uploads/sites/37/2021/04/001_marca_vertical_color.png" height="75" style="margin-right:15px;">
+    </div>
+    """
+
+    header = pn.pane.HTML(header_html, sizing_mode="stretch_width")
     input_coords = pn.widgets.TextAreaInput(
         max_length=900000,
         name="Coordenadas (id,lat,lon)", 
@@ -320,33 +303,21 @@ def painel_busca_multiplos_pontos():
     )
 
     def agrupar_postos(df_postos, periodo):
-        """
-        Agrupa df_postos por período (ex: 'M' ou 'Y'), mantendo a menor data do período
-        e escolhendo o modo (valor mais frequente) para cada coluna de posto.
-        Otimizado para usar um único groupby. Retorna 'data' + colunas de postos.
-        """
-        df = df_postos.copy()
-        df["data"] = pd.to_datetime(df["data"])
-        df["periodo"] = df["data"].dt.to_period(periodo)
+        df_postos = df_postos.copy()
+        df_postos["data"] = pd.to_datetime(df_postos["data"])
+        df_postos["periodo"] = df_postos["data"].dt.to_period(periodo)
 
-        def modo_rapido(s):
-            m = s.dropna().mode()
-            return m.iloc[0] if not m.empty else None
+        colunas_ids = [col for col in df_postos.columns if col not in ["data", "periodo"]]
+        df_agg = {"data": df_postos.groupby("periodo")["data"].min()}
 
-        # Construir mapa de agregação: data -> min, demais colunas -> modo
-        agg_map = {"data": "min"}
-        for col in df.columns:
-            if col not in ("data", "periodo"):
-                agg_map[col] = modo_rapido
+        for col in colunas_ids:
+            df_agg[col] = df_postos.groupby("periodo")[col].agg(
+                lambda x: x.mode().iloc[0] if not x.mode().empty else None
+            )
 
-        agrupado = df.groupby("periodo").agg(agg_map).reset_index(drop=True)
-
-        # Converter colunas de postos para Int64 (nullable) quando aplicável
-        for col in agrupado.columns:
-            if col != "data":
-                agrupado[col] = agrupado[col].astype("Int64")
-
-        return agrupado
+        df_postos_agregado = pd.concat(df_agg.values(), axis=1)
+        df_postos_agregado.columns = ["data"] + colunas_ids
+        return df_postos_agregado.reset_index(drop=True)
 
     import asyncio
 
@@ -459,7 +430,7 @@ def painel_busca_multiplos_pontos():
     buscar_btn.on_click(lambda event: asyncio.ensure_future(buscar_async(event)))
 
     def gerar_mapa_interativo():
-        m = folium.Map(location=[-5.4984, -39.3206], zoom_start=7, width='50%', height='450px')
+        m = folium.Map(location=[-5.4984, -39.3206], zoom_start=7, height='450px')
 
         for _, row in posto.iterrows():
             lat = row['Latitude']
@@ -517,27 +488,41 @@ def painel_busca_multiplos_pontos():
             """)
 
         m.add_child(ClickPopup())
-        return pn.pane.HTML(m._repr_html_(), height=450, sizing_mode='stretch_width')
+        return pn.pane.HTML(
+            m._repr_html_(),
+            height=450,
+            width=900,            # 👈 controla o tamanho REAL do mapa
+            sizing_mode="fixed",  # 👈 impede que ele expanda demais
+            styles={'overflow': 'hidden'}
+        )
+
 
     return pn.Column(
+        header,  # LOGOS NO TOPO
+        pn.Spacer(height=10),
         pn.pane.Markdown("## 🔍 Buscar série para múltiplos pontos"),
+
         pn.Row(
             pn.Column(
                 input_coords,
                 pn.Row(data_inicio, data_fim),
                 granularidade,
                 pn.Row(buscar_btn, progresso, spinner),
-                sizing_mode="stretch_width",
+                width=900,              # <-- largura máxima do mapa
+                sizing_mode="fixed"
             ),
             pn.Column(
                 pn.pane.Markdown("### 🗺️ Mapa 🗺️"),
                 gerar_mapa_interativo(),
-                sizing_mode="stretch_width",
+                sizing_mode="stretch_both",
             ),
             sizing_mode="stretch_width",
+            height=600,
         ),
+
+        pn.Spacer(height=20),
         resultado_nome,
-        pn.Row(btn_download_serie, btn_download_postos, sizing_mode="stretch_width"),
+        pn.Row(btn_download_serie, btn_download_postos),
         sizing_mode="stretch_width",
     )
 
