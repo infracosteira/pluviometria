@@ -2,7 +2,7 @@
 
 ## O InfraCosteira é uma aplicação web desenvolvida para visualização, consulta e download de dados pluviométricos de estações meteorológicas do estado do Ceará. A plataforma organiza informações históricas de forma acessível, permitindo análises rápidas por município e posto de coleta.
 
-#🔍 Funcionalidades
+# 🔍 Funcionalidades
 ## 🔎 Busca por município
 *Permite localizar rapidamente estações pluviométricas específicas.
 ## 📊 Tabela interativa
