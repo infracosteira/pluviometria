@@ -4,8 +4,3 @@ Package References:
 - [Chakra UI](https://chakra-ui.com/)
 - [React DatePicker](https://www.npmjs.com/package/react-datepicker?activeTab=readme)
 
-# pluviometria
-
-Before run:
-
-1 - npm install
