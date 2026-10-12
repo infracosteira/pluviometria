@@ -136,13 +136,13 @@ const TaskTable = () => {
   const tableRowExpandedBg = useColorModeValue("#f0f9ff", "#162540");
   const detailBoxBg = useColorModeValue("#f8fafc", "#0b1322");
 
-  // Tenta buscar dados mais recentes do GitHub, mantendo o fallback local garantido
+  // Tenta buscar dados mais recentes da AWS S3 (Gold), mantendo o fallback local garantido
   useEffect(() => {
     async function loadData() {
       try {
         setIsLoading(true);
         const response = await fetch(
-          "https://raw.githubusercontent.com/infracosteira/pluviometria/refs/heads/main/data/dados_formatados_resumo.json"
+          "https://tcc-funceme-gold-3ewrs4.s3.us-east-1.amazonaws.com/gold/postos_resumo.json"
         );
         if (response.ok) {
           const remoteJson = await response.json();
@@ -151,7 +151,7 @@ const TaskTable = () => {
           }
         }
       } catch (err) {
-        console.warn("Utilizando base de dados embutida:", err);
+        console.warn("Utilizando base de dados embutida (fallback):", err);
       } finally {
         setIsLoading(false);
       }
