@@ -67,9 +67,6 @@ async function downloadFile(fileUrl, fileName) {
   try {
     const response = await axios.get(fileUrl, {
       responseType: "blob",
-      headers: {
-        "Content-Type": "text/csv",
-      },
     });
 
     if (response.status === 200) {
@@ -142,11 +139,13 @@ const TaskTable = () => {
       try {
         setIsLoading(true);
         const response = await fetch(
-          "https://tcc-funceme-gold-3ewrs4.s3.us-east-1.amazonaws.com/gold/postos_resumo.json"
+          "https://tcc-funceme-gold-3ewrs4.s3.us-east-1.amazonaws.com/gold/postos_resumo.json",
+          { cache: "no-store" }
         );
         if (response.ok) {
           const remoteJson = await response.json();
           if (Array.isArray(remoteJson) && remoteJson.length > 0) {
+            console.log("Dados carregados com sucesso da AWS S3:", remoteJson.length, "postos.");
             setData(remoteJson);
           }
         }
